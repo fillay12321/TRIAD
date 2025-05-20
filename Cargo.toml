@@ -1,0 +1,76 @@
+[package]
+name = "triad"
+version = "0.1.0"
+edition = "2021"
+authors = ["Михаил"]
+description = "TRIAD - Квантово-вдохновленная распределенная сеть следующего поколения"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+# Математические библиотеки
+num-complex = "0.4.3"  # Для работы с комплексными числами (квантовые амплитуды)
+nalgebra = "0.32.3"    # Для матричных операций
+rand = "0.8"
+
+# Сериализация/десериализация
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Сетевые библиотеки
+tokio = { version = "1.28", features = ["full"] }
+libp2p = { version = "0.51.0", features = ["tcp", "noise"] }  # P2P коммуникации
+
+# Утилиты
+log = "0.4"
+env_logger = "0.10"
+thiserror = "1.0"
+
+# Дополнительные зависимости
+clap = { version = "4.4.10", features = ["derive"] }
+plotters = "0.3.5"
+rayon = "1.8"  # Для параллельной обработки
+
+# Async traits
+async-trait = "0.1"
+futures = "0.3"
+
+[dev-dependencies]
+criterion = "0.5.1"    # Для бенчмарков
+tokio-test = "0.4"
+
+[lib]
+name = "triad"
+path = "src/lib.rs"
+
+[[bin]]
+name = "triad"
+path = "src/main.rs"
+
+[[example]]
+name = "basic_consensus"
+path = "examples/basic_consensus.rs"
+
+[[example]]
+name = "scalability_test"
+path = "examples/scalability_test.rs"
+
+[[example]]
+name = "energy_comparison"
+path = "examples/energy_comparison.rs"
+
+[[example]]
+name = "quantum_metrics"
+path = "examples/quantum_metrics.rs"
+
+[[example]]
+name = "consensus_analysis"
+path = "examples/consensus_analysis.rs"
+
+[[example]]
+name = "energy_metrics"
+path = "examples/energy_metrics.rs"
+
+[profile.release]
+opt-level = 3
+lto = true 
