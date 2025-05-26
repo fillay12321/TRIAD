@@ -111,7 +111,7 @@ Cargo: 1.70 or higher
 Optional: OpenSSL, libpq (for database support, if needed)
 
 Instructions
-git clone https://github.com/your-username/triad.git
+git clone https://github.com/fillay12321/triad.git
 cd triad
 cargo build --release
 cargo test -- --test-threads=1
