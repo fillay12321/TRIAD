@@ -9,9 +9,10 @@ use log::{debug, error, info, warn};
 use local_ip_address::local_ip;
 use serde::{Deserialize, Serialize};
 
-use crate::network::error::NetworkError;
-use crate::network::types::{Message, MessageType, NetworkEvent, PeerInfo};
+use crate::network::types::{PeerInfo, NetworkEvent};
 use crate::network::peer::PeerManager;
+use crate::network::MessageType;
+use crate::network::NetworkError;
 
 /// Порт по умолчанию для обнаружения узлов
 pub const DEFAULT_DISCOVERY_PORT: u16 = 23456;

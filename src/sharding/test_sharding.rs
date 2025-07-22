@@ -8,7 +8,7 @@ fn test_sharding_parallel_processing() {
     let nodes_per_shard = 5;
     let messages_per_node = 10;
 
-    // Создаём шарды
+    // Create shards
     let mut shards: Vec<Shard> = (0..num_shards)
         .map(|shard_id| {
             let nodes = (0..nodes_per_shard)
@@ -22,7 +22,7 @@ fn test_sharding_parallel_processing() {
         })
         .collect();
 
-    // Для каждого шарда — свой список сообщений для каждого узла
+    // For each shard — its own list of messages for each node
     let mut all_shard_messages: Vec<Vec<Vec<ConsensusMessage>>> = vec![
         vec![vec![]; nodes_per_shard]; num_shards
     ];
@@ -39,7 +39,7 @@ fn test_sharding_parallel_processing() {
         }
     }
 
-    // Параллельная обработка шардов
+    // Parallel processing of shards
     shards.par_iter_mut().enumerate().for_each(|(shard_id, shard)| {
         shard.process_messages(&all_shard_messages[shard_id]);
     });

@@ -2,49 +2,27 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use uuid::Uuid;
 use std::time::{Duration, Instant};
+use crate::network::MessageType;
 
-/// Типы сообщений, поддерживаемые сетевым модулем
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MessageType {
-    /// Ping-сообщение для проверки соединения
-    Ping,
-    /// Pong-ответ на ping
-    Pong,
-    /// Обнаружение узлов
-    Discovery,
-    /// Ответ на обнаружение
-    DiscoveryResponse,
-    /// Пользовательские данные
-    UserData,
-    /// Подтверждение получения сообщения
-    Ack,
-    /// Сообщения, связанные с консенсусом
-    Consensus,
-    /// Транзакция
-    Transaction,
-    /// Блок
-    Block,
-}
-
-/// Сетевое сообщение
+/// Network message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
-    /// Уникальный идентификатор сообщения
+    /// Unique message identifier
     pub id: Uuid,
-    /// Идентификатор отправителя
+    /// Sender identifier
     pub sender_id: Uuid,
-    /// Идентификатор получателя (если None, то broadcast)
+    /// Recipient identifier (if None, then broadcast)
     pub recipient_id: Option<Uuid>,
-    /// Тип сообщения
+    /// Message type
     pub message_type: MessageType,
-    /// Timestamp сообщения
+    /// Message timestamp
     pub timestamp: u64,
-    /// Полезная нагрузка сообщения
+    /// Message payload
     pub payload: Vec<u8>,
 }
 
 impl Message {
-    /// Создаёт новое сообщение
+    /// Creates a new message
     pub fn new(
         sender_id: Uuid,
         recipient_id: Option<Uuid>,
@@ -67,22 +45,42 @@ impl Message {
     }
 }
 
-/// Информация об узле сети
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Node information
+#[derive(Debug, Clone)]
 pub struct PeerInfo {
-    /// Уникальный идентификатор узла
+    /// Unique node identifier
     pub id: Uuid,
-    /// Имя узла
+    /// Node name
     pub name: String,
-    /// Адрес и порт узла
+    /// Node address and port
     pub address: SocketAddr,
-    /// Время последнего взаимодействия
-    #[serde(skip)]
+    /// Last interaction time
     pub last_seen: Instant,
 }
 
+/// Serializable version of PeerInfo for network transfer
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerializablePeerInfo {
+    /// Unique node identifier
+    pub id: Uuid,
+    /// Node name
+    pub name: String,
+    /// Node address and port as a string
+    pub address: String,
+}
+
+impl From<&PeerInfo> for SerializablePeerInfo {
+    fn from(peer: &PeerInfo) -> Self {
+        Self {
+            id: peer.id,
+            name: peer.name.clone(),
+            address: peer.address.to_string(),
+        }
+    }
+}
+
 impl PeerInfo {
-    /// Создаёт новую информацию об узле
+    /// Creates new node information
     pub fn new(id: Uuid, name: String, address: SocketAddr) -> Self {
         Self {
             id,
@@ -92,31 +90,21 @@ impl PeerInfo {
         }
     }
     
-    /// Обновляет время последнего взаимодействия
+    /// Updates last interaction time
     pub fn update_last_seen(&mut self) {
         self.last_seen = Instant::now();
     }
     
-    /// Проверяет, активен ли узел
+    /// Checks if the node is active
     pub fn is_active(&self, timeout: Duration) -> bool {
         self.last_seen.elapsed() < timeout
     }
-}
+} 
 
-/// События сетевого модуля
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum NetworkEvent {
-    /// Получено сообщение
-    MessageReceived {
-        /// Идентификатор отправителя
-        from: Uuid,
-        /// Само сообщение
-        message: Message,
-    },
-    /// Подключён новый узел
+    MessageReceived { from: uuid::Uuid, message: Message },
     PeerConnected(PeerInfo),
-    /// Узел отключён
-    PeerDisconnected(Uuid),
-    /// Ошибка сети
-    Error(String),
+    PeerDisconnected(uuid::Uuid),
+    // Other events can be added as needed
 } 

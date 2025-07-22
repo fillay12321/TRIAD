@@ -7,6 +7,7 @@ mod tests {
     use crate::quantum::consensus::{ConsensusNode, ConsensusMessage};
     use crate::sharding::assign_shard;
     use std::time::Instant;
+    use num_complex;
 
     #[test]
     fn test_quantum_vs_classical_blockchain() {
@@ -87,15 +88,17 @@ mod tests {
         
         // Создаем тестовое состояние
         let state = QuantumState {
+            id: "test_state".to_string(),
+            shard_id: "0".to_string(),
             amplitude: 1.0,
             phase: 0.0,
             superposition: vec![
                 StateVector {
-                    value: vec![1, 0, 1],
+                    value: num_complex::Complex::new(1.0, 0.0),
                     probability: 0.7,
                 },
                 StateVector {
-                    value: vec![0, 1, 0],
+                    value: num_complex::Complex::new(0.0, 0.0),
                     probability: 0.3,
                 },
             ],

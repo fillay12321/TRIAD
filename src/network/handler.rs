@@ -3,7 +3,10 @@ use uuid::Uuid;
 use crate::network::types::{Message, PeerInfo};
 use crate::network::error::NetworkError;
 
-/// Интерфейс обработчика сетевых сообщений
+/// Network message handler interface
+/// Handles received message
+/// Handles new node connection
+/// Handles node disconnection
 #[async_trait]
 pub trait MessageHandler: Send + Sync {
     /// Обрабатывает полученное сообщение
@@ -16,13 +19,13 @@ pub trait MessageHandler: Send + Sync {
     async fn handle_peer_disconnected(&mut self, peer_id: Uuid) -> Result<(), NetworkError>;
 }
 
-/// Реализация обработчика по умолчанию для тестов и отладки
+/// Default handler implementation for tests and debugging
 pub struct DefaultMessageHandler {
     node_id: Uuid,
 }
 
 impl DefaultMessageHandler {
-    /// Создаёт новый экземпляр обработчика по умолчанию
+    /// Creates a new instance of the default handler
     pub fn new(node_id: Uuid) -> Self {
         Self { node_id }
     }
@@ -32,7 +35,7 @@ impl DefaultMessageHandler {
 impl MessageHandler for DefaultMessageHandler {
     async fn handle_message(&mut self, from: Uuid, message: Message) -> Result<(), NetworkError> {
         log::info!(
-            "Узел {} получил сообщение от {}: тип={:?}, id={}",
+            "Node {} received message from {}: type={:?}, id={}",
             self.node_id,
             from,
             message.message_type,
@@ -43,7 +46,7 @@ impl MessageHandler for DefaultMessageHandler {
     
     async fn handle_peer_connected(&mut self, peer_info: PeerInfo) -> Result<(), NetworkError> {
         log::info!(
-            "Узел {} обнаружил новый узел: {} ({})",
+            "Node {} discovered new node: {} ({})",
             self.node_id,
             peer_info.name,
             peer_info.id
@@ -53,7 +56,7 @@ impl MessageHandler for DefaultMessageHandler {
     
     async fn handle_peer_disconnected(&mut self, peer_id: Uuid) -> Result<(), NetworkError> {
         log::info!(
-            "Узел {} потерял соединение с узлом {}",
+            "Node {} lost connection with node {}",
             self.node_id,
             peer_id
         );

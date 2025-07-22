@@ -3,19 +3,20 @@ use serde::{Serialize, Deserialize};
 use std::sync::Arc;
 use std::sync::RwLock;
 use rayon::prelude::*;
+use num_complex::Complex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuantumState {
     pub id: String,
-    pub shard_id: usize,
     pub amplitude: f64,
     pub phase: f64,
+    pub shard_id: String,
     pub superposition: Vec<StateVector>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateVector {
-    pub value: Vec<u8>,
+    pub value: Complex<f64>,
     pub probability: f64,
 }
 
@@ -156,8 +157,20 @@ impl QuantumField {
 }
 
 impl QuantumState {
-    pub fn new(id: String, shard_id: usize, superposition: Vec<StateVector>) -> Self {
-        Self { id, shard_id, amplitude: 0.0, phase: 0.0, superposition }
+    pub fn new(id: String, amplitude: f64, phase: f64, shard_id: String, superposition: Vec<StateVector>) -> Self {
+        Self { id, amplitude, phase, shard_id, superposition }
+    }
+}
+
+impl Default for QuantumState {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            amplitude: 0.0,
+            phase: 0.0,
+            shard_id: String::new(),
+            superposition: Vec::new(),
+        }
     }
 }
 

@@ -1,5 +1,5 @@
-//! Сетевой модуль для обмена сообщениями между узлами в локальной сети
-//! Обеспечивает обнаружение узлов, установление соединений и обмен сообщениями
+//! Network module for message exchange between nodes in a local network
+//! Provides node discovery, connection establishment, and message exchange
 
 mod types;
 mod discovery;
@@ -9,7 +9,6 @@ mod error;
 mod peer;
 mod handler;
 
-pub use types::{Message, MessageType, NetworkEvent, PeerInfo};
 pub use error::NetworkError;
 pub use discovery::DiscoveryService;
 pub use transport::TransportService;
@@ -17,43 +16,55 @@ pub use message::MessageService;
 pub use peer::PeerManager;
 pub use handler::MessageHandler;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 use log::{debug, error, info, warn};
+use std::collections::HashMap;
+use std::time::SystemTime;
+use crate::transaction::{Transaction, TransactionStatus};
+use crate::quantum::consensus::ConsensusState;
+use crate::sharding::ShardEvent;
+use crate::error_analysis::ErrorContext;
+use crate::semantic::SemanticAction;
+use crate::transaction::SmartContract;
+use crate::quantum::consensus::ConsensusMessage;
+use serde::{Serialize, Deserialize};
+use crate::network::types::PeerInfo;
+use crate::network::types::NetworkEvent;
 
-/// Основной класс сетевого модуля
+/// Main class of the network module
 pub struct Network {
-    /// Уникальный идентификатор узла
+    /// Unique node identifier
     node_id: Uuid,
-    /// Имя узла
+    /// Node name
     node_name: String,
-    /// Сервис обнаружения узлов
+    /// Node discovery service
     discovery: Arc<DiscoveryService>,
-    /// Сервис транспорта сообщений
+    /// Message transport service
     transport: Arc<TransportService>,
-    /// Сервис обработки сообщений
+    /// Message processing service
     message_service: Arc<MessageService>,
-    /// Менеджер соединений с узлами
+    /// Peer manager for connections to nodes
     peer_manager: Arc<RwLock<PeerManager>>,
-    /// Канал для приёма событий сети
+    /// Channel for receiving network events
     event_receiver: mpsc::Receiver<NetworkEvent>,
-    /// Канал для отправки событий сети
+    /// Channel for sending network events
     event_sender: mpsc::Sender<NetworkEvent>,
 }
 
 impl Network {
-    /// Создаёт новый экземпляр сетевого модуля
+    /// Creates a new instance of the network module
     pub async fn new(node_name: String, port: u16) -> Result<Self, NetworkError> {
         let node_id = Uuid::new_v4();
         
-        // Создаём каналы для событий
+        // Create channels for events
         let (event_sender, event_receiver) = mpsc::channel(100);
         
-        // Создаём менеджер узлов
+        // Create peer manager
         let peer_manager = Arc::new(RwLock::new(PeerManager::new()));
         
-        // Создаём сервис обнаружения узлов
+        // Create node discovery service
         let discovery = Arc::new(DiscoveryService::new(
             node_id,
             node_name.clone(),
@@ -62,7 +73,7 @@ impl Network {
             peer_manager.clone(),
         ));
         
-        // Создаём сервис транспорта
+        // Create message transport service
         let transport = Arc::new(TransportService::new(
             node_id,
             port,
@@ -70,7 +81,7 @@ impl Network {
             peer_manager.clone(),
         ));
         
-        // Создаём сервис обработки сообщений
+        // Create message processing service
         let message_service = Arc::new(MessageService::new(
             node_id,
             event_sender.clone(),
@@ -89,75 +100,75 @@ impl Network {
         })
     }
     
-    /// Запускает сетевой модуль
+    /// Starts the network module
     pub async fn start(&mut self) -> Result<(), NetworkError> {
-        // Запускаем сервис обнаружения
+        // Start discovery service
         self.discovery.start().await?;
         
-        // Запускаем сервис транспорта
+        // Start transport service
         self.transport.start().await?;
         
-        info!("Сетевой модуль запущен, ID узла: {}, имя: {}", self.node_id, self.node_name);
+        info!("Network module started, node ID: {}, name: {}", self.node_id, self.node_name);
         
         Ok(())
     }
     
-    /// Останавливает сетевой модуль
+    /// Stops the network module
     pub async fn stop(&self) -> Result<(), NetworkError> {
-        // Останавливаем сервисы
+        // Stop services
         self.discovery.stop().await?;
         self.transport.stop().await?;
         
-        info!("Сетевой модуль остановлен");
+        info!("Network module stopped");
         
         Ok(())
     }
     
-    /// Отправляет сообщение конкретному узлу
+    /// Sends a message to a specific node
     pub async fn send_to_peer(&self, peer_id: Uuid, message_type: MessageType, payload: Vec<u8>) -> Result<(), NetworkError> {
         self.message_service.send_to_peer(peer_id, message_type, payload).await
     }
     
-    /// Отправляет сообщение всем известным узлам
+    /// Broadcasts a message to all known nodes
     pub async fn broadcast(&self, message_type: MessageType, payload: Vec<u8>) -> Result<(), NetworkError> {
         self.message_service.broadcast(message_type, payload).await
     }
     
-    /// Возвращает список известных узлов
+    /// Returns the list of known nodes
     pub async fn get_peers(&self) -> Vec<PeerInfo> {
         self.peer_manager.read().await.get_all_peers()
     }
     
-    /// Обрабатывает события сети в бесконечном цикле
+    /// Processes network events in an infinite loop
     pub async fn run_event_loop(&mut self, mut handler: impl MessageHandler + 'static) -> Result<(), NetworkError> {
-        info!("Запуск цикла обработки событий сети");
+        info!("Starting network event loop");
         
         while let Some(event) = self.event_receiver.recv().await {
             match event {
                 NetworkEvent::MessageReceived { from, message } => {
-                    debug!("Получено сообщение от {}: тип={:?}", from, message.message_type);
+                    debug!("Received message from {}: type={:?}", from, message.message_type);
                     
-                    // Обрабатываем сообщение с помощью хендлера
+                    // Process message using the handler
                     if let Err(e) = handler.handle_message(from, message).await {
-                        error!("Ошибка обработки сообщения: {}", e);
+                        error!("Error processing message: {}", e);
                     }
                 },
                 NetworkEvent::PeerConnected(peer_info) => {
-                    info!("Подключен новый узел: {} ({})", peer_info.name, peer_info.id);
+                    info!("New node connected: {} ({})", peer_info.name, peer_info.id);
                     
                     if let Err(e) = handler.handle_peer_connected(peer_info).await {
-                        error!("Ошибка обработки подключения узла: {}", e);
+                        error!("Error processing node connection: {}", e);
                     }
                 },
                 NetworkEvent::PeerDisconnected(peer_id) => {
-                    info!("Узел отключен: {}", peer_id);
+                    info!("Node disconnected: {}", peer_id);
                     
                     if let Err(e) = handler.handle_peer_disconnected(peer_id).await {
-                        error!("Ошибка обработки отключения узла: {}", e);
+                        error!("Error processing node disconnection: {}", e);
                     }
                 },
                 _ => {
-                    debug!("Получено другое событие сети: {:?}", event);
+                    debug!("Received other network event: {:?}", event);
                 }
             }
         }
@@ -165,13 +176,96 @@ impl Network {
         Ok(())
     }
     
-    /// Возвращает ID текущего узла
+    /// Returns the ID of the current node
     pub fn node_id(&self) -> Uuid {
         self.node_id
     }
     
-    /// Возвращает имя текущего узла
+    /// Returns the name of the current node
     pub fn node_name(&self) -> &str {
         &self.node_name
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MessageType {
+    Transaction(Transaction),
+    SmartContract(SmartContract),
+    Consensus(ConsensusMessage),
+    ShardEvent(ShardEvent),
+    ErrorEvent(ErrorContext),
+    SemanticAction(SemanticAction),
+    Error(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct NetworkNode {
+    pub id: String,
+    pub address: String,
+    pub peers: Vec<String>,
+    pub transactions: Vec<Transaction>,
+    pub contracts: Vec<SmartContract>,
+    pub shard_events: Vec<ShardEvent>,
+    pub errors: Vec<ErrorContext>,
+    pub semantic_actions: Vec<SemanticAction>,
+    pub consensus_state: ConsensusState,
+}
+
+#[derive(Debug, Clone)]
+pub struct NetworkMessage {
+    pub id: Uuid,
+    pub sender: String,
+    pub receiver: String,
+    pub message_type: MessageType,
+    pub timestamp: SystemTime,
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NodeConfig {
+    pub id: String,
+    pub address: String,
+    pub initial_peers: Vec<String>,
+    pub consensus_threshold: f64,
+}
+
+impl NetworkNode {
+    pub fn new(config: NodeConfig) -> Self {
+        Self {
+            id: config.id,
+            address: config.address,
+            peers: config.initial_peers,
+            transactions: Vec::new(),
+            contracts: Vec::new(),
+            shard_events: Vec::new(),
+            errors: Vec::new(),
+            semantic_actions: Vec::new(),
+            consensus_state: ConsensusState::default(),
+        }
+    }
+
+    pub fn broadcast(&mut self, message: NetworkMessage) {
+        // Implementation of broadcast
+    }
+
+    pub fn process_message(&mut self, message: NetworkMessage) {
+        match message.message_type {
+            MessageType::Transaction(transaction) => {
+                self.transactions.push(transaction);
+            }
+            MessageType::SmartContract(contract) => {
+                self.contracts.push(contract);
+            }
+            MessageType::ShardEvent(event) => {
+                self.shard_events.push(event);
+            }
+            MessageType::ErrorEvent(error) => {
+                self.errors.push(error);
+            }
+            MessageType::SemanticAction(action) => {
+                self.semantic_actions.push(action);
+            }
+            _ => {}
+        }
     }
 } 

@@ -1,6 +1,6 @@
 [package]
 name = "triad"
-version = "0.1.0"
+version = "1.1.0"
 edition = "2021"
 authors = ["Михаил"]
 description = "TRIAD - Квантово-вдохновленная распределенная сеть следующего поколения"
@@ -9,16 +9,17 @@ readme = "README.md"
 
 [dependencies]
 # Математические библиотеки
-num-complex = "0.4.3"  # Для работы с комплексными числами (квантовые амплитуды)
+num-complex = { version = "0.4", features = ["serde"] }  # Для работы с комплексными числами (квантовые амплитуды)
 nalgebra = "0.32.3"    # Для матричных операций
-rand = "0.8"
+rand = "0.8.5"
+rand_core = "0.6"
 
 # Сериализация/десериализация
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Сетевые библиотеки
-tokio = { version = "1.29", features = ["full"] }
+tokio = { version = "1.28", features = ["full"] }
 libp2p = { version = "0.51.0", features = ["tcp", "noise"] }  # P2P коммуникации
 
 # Утилиты
@@ -29,7 +30,7 @@ thiserror = "1.0"
 # Дополнительные зависимости
 clap = { version = "4.4.10", features = ["derive"] }
 plotters = "0.3.5"
-rayon = "1.8"  # Для параллельной обработки
+rayon = "1.7"  # Для параллельной обработки
 
 # Async traits
 async-trait = "0.1"
@@ -37,8 +38,37 @@ futures = "0.3"
 
 # Дополнительные зависимости для сетевого взаимодействия
 bincode = "1.3"
-uuid = { version = "1.4", features = ["v4", "serde"] }
+uuid = { version = "1.4.1", features = ["v4", "serde"] }
 local-ip-address = "0.5"
+
+# Добавляем новые зависимости
+reqwest = { version = "0.11", features = ["json"] }
+lazy_static = "1.4"
+
+# Добавляем новые зависимости
+sha2 = "0.10"
+
+# Token and ledger enhancements
+rocksdb = "0.21"
+
+# High-throughput enhancements
+blsful = "3.0.0-pre8"  # For aggregated signatures
+quinn = "0.11.3"  # For fast network transport (QUIC)
+
+# Innovation enhancements
+tensorflow = "0.21.0"  # For ML in semantic/error
+bellman = "0.13"  # For ZK-SNARKs
+schnorrkel = "0.10"  # For advanced Schnorr signatures
+
+# Advanced features
+cust = { version = "0.3.2", optional = true }  # CUDA
+ocl = { version = "0.19", optional = true }  # OpenCL
+smartcore = { version = "0.3.2", features = ["serde"] }  # ML для динамического шардинга
+
+[features]
+default = []
+cuda = ["cust"]
+opencl = ["ocl"]
 
 [dev-dependencies]
 criterion = "0.5.1"    # Для бенчмарков
@@ -75,6 +105,26 @@ path = "examples/consensus_analysis.rs"
 [[example]]
 name = "energy_metrics"
 path = "examples/energy_metrics.rs"
+
+[[example]]
+name = "comprehensive_demo"
+path = "examples/comprehensive_demo.rs"
+
+[[example]]
+name = "network_node"
+path = "examples/network_node.rs"
+
+[[example]]
+name = "error_analysis_demo"
+path = "examples/error_analysis_demo.rs"
+
+[[example]]
+name = "semantic_analysis_demo"
+path = "examples/semantic_analysis_demo.rs"
+
+[[example]]
+name = "chat"
+path = "examples/chat.rs"
 
 [profile.release]
 opt-level = 3

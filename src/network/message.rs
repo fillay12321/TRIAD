@@ -2,10 +2,12 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use log::{debug, error, info};
+use std::time::SystemTime;
 
 use crate::network::error::NetworkError;
-use crate::network::types::{Message, MessageType, NetworkEvent};
+use crate::network::types::{Message, NetworkEvent, PeerInfo};
 use crate::network::transport::TransportService;
+use crate::network::MessageType;
 
 /// Сервис для обработки и маршрутизации сообщений
 pub struct MessageService {
@@ -51,7 +53,7 @@ impl MessageService {
         let message = Message::new(
             self.node_id,
             None, // Broadcast
-            message_type,
+            message_type.clone(),
             payload,
         );
         
@@ -69,39 +71,12 @@ impl MessageService {
     pub async fn handle_message(&self, from: Uuid, message: Message) -> Result<(), NetworkError> {
         debug!("Обработка сообщения от {}: тип={:?}, id={}", from, message.message_type, message.id);
         
-        // В зависимости от типа сообщения выполняем разные действия
-        match message.message_type {
-            MessageType::Ping => {
-                // Отвечаем на ping
-                self.send_to_peer(from, MessageType::Pong, vec![]).await?;
-            },
-            MessageType::Pong => {
-                // Обновляем время последнего пинга (в реальной реализации)
-            },
-            MessageType::Discovery => {
-                // Обрабатываем discovery-сообщение (в реальной реализации)
-            },
-            MessageType::DiscoveryResponse => {
-                // Обрабатываем ответ на discovery-сообщение (в реальной реализации)
-            },
-            MessageType::UserData => {
-                // Передаём пользовательские данные в обработчик (через событие)
-                if let Err(e) = self.event_sender.send(NetworkEvent::MessageReceived {
-                    from,
-                    message,
-                }).await {
-                    error!("Ошибка отправки события MessageReceived: {}", e);
-                }
-            },
-            _ => {
-                // Все остальные типы сообщений тоже передаём в обработчик
-                if let Err(e) = self.event_sender.send(NetworkEvent::MessageReceived {
-                    from,
-                    message,
-                }).await {
-                    error!("Ошибка отправки события MessageReceived: {}", e);
-                }
-            }
+        // Все остальные типы сообщений тоже передаём в обработчик
+        if let Err(e) = self.event_sender.send(NetworkEvent::MessageReceived {
+            from,
+            message,
+        }).await {
+            error!("Ошибка отправки события MessageReceived: {}", e);
         }
         
         Ok(())

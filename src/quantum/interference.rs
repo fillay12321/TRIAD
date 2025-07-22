@@ -7,6 +7,54 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
 use rayon::prelude::*;
+use sha2::{Sha256, Digest};
+use serde_json;
+
+#[cfg(feature = "cuda")]
+use cust::prelude::*;
+#[cfg(feature = "opencl")]
+use ocl::{ProQue, Buffer};
+
+pub trait QuantumInterferenceAccelerator {
+    fn calculate(&self, states: &[QuantumState], resolution: usize) -> Vec<InterferencePoint>;
+}
+
+pub struct CpuAccelerator;
+impl QuantumInterferenceAccelerator for CpuAccelerator {
+    fn calculate(&self, states: &[QuantumState], resolution: usize) -> Vec<InterferencePoint> {
+        let step = 1.0 / resolution as f64;
+        (0..resolution).into_par_iter().map(|i| {
+            let x = i as f64 * step;
+            let mut total_amp = 0.0;
+            for s in states {
+                total_amp += s.amplitude * (2.0 * std::f64::consts::PI * x + s.phase).cos();
+            }
+            InterferencePoint { position: x, amplitude: total_amp, phase: 0.0 }
+        }).collect()
+    }
+}
+
+#[cfg(feature = "cuda")]
+pub struct CudaAccelerator {
+    _ctx: cust::context::Context,
+}
+#[cfg(feature = "cuda")]
+impl QuantumInterferenceAccelerator for CudaAccelerator {
+    fn calculate(&self, states: &[QuantumState], resolution: usize) -> Vec<InterferencePoint> {
+        // CUDA kernel launch (stub, kernel implementation required)
+        vec![InterferencePoint { position: 0.0, amplitude: 0.0, phase: 0.0 }; resolution]
+    }
+}
+
+#[cfg(feature = "opencl")]
+pub struct OpenClAccelerator;
+#[cfg(feature = "opencl")]
+impl QuantumInterferenceAccelerator for OpenClAccelerator {
+    fn calculate(&self, states: &[QuantumState], resolution: usize) -> Vec<InterferencePoint> {
+        // OpenCL kernel launch (stub, kernel implementation required)
+        vec![InterferencePoint { position: 0.0, amplitude: 0.0, phase: 0.0 }; resolution]
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct InterferenceEngine {
@@ -19,7 +67,7 @@ pub struct InterferenceEngine {
 impl InterferenceEngine {
     pub fn new(resolution: usize, decay_factor: f64) -> Self {
         Self {
-            resolution: resolution.min(100), // Ограничиваем разрешение
+            resolution: resolution.min(100), // Limit resolution
             threshold: 0.95,
             decay_factor,
             cache: Arc::new(RwLock::new(HashMap::new())),
@@ -27,7 +75,7 @@ impl InterferenceEngine {
     }
 
     pub fn calculate_interference_pattern(&self, states: &[QuantumState]) -> Vec<InterferencePoint> {
-        // Проверяем кэш
+        // Check cache
         let cache_key = self.generate_cache_key(states);
         if let Ok(cache) = self.cache.read() {
             if let Some(cached) = cache.get(&cache_key) {
@@ -37,7 +85,7 @@ impl InterferenceEngine {
 
         let step = 1.0 / self.resolution as f64;
         
-        // Предварительно вычисляем фазы и амплитуды
+        // Pre-calculate phases and amplitudes
         let phases: Vec<f64> = states.iter()
             .map(|state| state.phase)
             .collect();
@@ -46,7 +94,7 @@ impl InterferenceEngine {
             .map(|state| state.amplitude)
             .collect();
 
-        // Параллельное вычисление точек интерференции
+        // Parallel interference point calculation
         let pattern: Vec<InterferencePoint> = (0..self.resolution)
             .into_par_iter()
             .map(|i| {
@@ -54,14 +102,14 @@ impl InterferenceEngine {
                 let mut total_amplitude = 0.0;
                 let mut total_phase = 0.0;
                 
-                // Используем предварительно вычисленные значения
+                // Use pre-calculated values
                 for (amplitude, phase) in amplitudes.iter().zip(phases.iter()) {
                     let contribution = self.calculate_state_contribution_fast(*amplitude, *phase, x);
                     total_amplitude += contribution.0;
                     total_phase += contribution.1;
                 }
                 
-                // Применяем затухание (оптимизированная версия)
+                // Apply decay (optimized version)
                 total_amplitude *= self.decay_factor.powi((x * 10.0) as i32);
                 
                 InterferencePoint {
@@ -72,7 +120,7 @@ impl InterferenceEngine {
             })
             .collect();
         
-        // Сохраняем в кэш
+        // Save to cache
         if let Ok(mut cache) = self.cache.write() {
             cache.insert(cache_key, pattern.clone());
         }
@@ -81,7 +129,7 @@ impl InterferenceEngine {
     }
     
     fn calculate_state_contribution_fast(&self, amplitude: f64, phase: f64, x: f64) -> (f64, f64) {
-        // Оптимизированная версия с предварительными вычислениями
+        // Optimized version with pre-calculated values
         let pi_2 = 2.0 * std::f64::consts::PI;
         let phase_x = pi_2 * x + phase;
         let wave = amplitude * phase_x.cos();
@@ -89,12 +137,11 @@ impl InterferenceEngine {
     }
 
     fn generate_cache_key(&self, states: &[QuantumState]) -> String {
-        // Оптимизированное создание ключа кэша
-        let mut key = String::with_capacity(states.len() * 20);
-        for state in states {
-            key.push_str(&format!("{:.3}_{:.3}_", state.amplitude, state.phase));
-        }
-        key
+        // New protected key: serialization + SHA256
+        let json = serde_json::to_string(states).unwrap();
+        let mut hasher = Sha256::new();
+        hasher.update(json.as_bytes());
+        format!("{:x}", hasher.finalize())
     }
     
     pub fn analyze_interference(&self, pattern: &[InterferencePoint]) -> InterferenceAnalysis {
@@ -106,7 +153,7 @@ impl InterferenceEngine {
             destructive_points: Vec::with_capacity(pattern.len() / 2),
         };
         
-        // Параллельный анализ
+        // Parallel analysis
         let (max_amp, min_amp, sum_amp, constructive, destructive) = pattern.par_iter()
             .fold(
                 || (0.0f64, f64::MAX, 0.0f64, Vec::new(), Vec::new()),
@@ -153,6 +200,23 @@ impl InterferenceEngine {
             writeln!(file, "{},{},{}", point.position, point.amplitude, point.phase)?;
         }
         Ok(())
+    }
+
+    pub fn calculate_interference_auto(&self, states: &[QuantumState]) -> Vec<InterferencePoint> {
+        #[cfg(feature = "cuda")]
+        {
+            let ctx = cust::quick_init().unwrap();
+            let acc = CudaAccelerator { _ctx: ctx }; // Kernel implementation required
+            return acc.calculate(states, self.resolution);
+        }
+        #[cfg(all(not(feature = "cuda"), feature = "opencl"))]
+        {
+            let acc = OpenClAccelerator;
+            return acc.calculate(states, self.resolution);
+        }
+        // Fallback on CPU
+        let acc = CpuAccelerator;
+        acc.calculate(states, self.resolution)
     }
 }
 

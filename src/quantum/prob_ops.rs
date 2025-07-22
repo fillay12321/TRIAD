@@ -10,7 +10,7 @@ pub struct ProbabilisticOperation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OperationOutcome {
     pub label: String,
-    pub probability: f64, // Должна быть сумма 1.0 по всем исходам
+    pub probability: f64, // The sum of all outcomes must be 1.0
     pub value: Option<serde_json::Value>,
 }
 
@@ -25,7 +25,7 @@ impl ProbabilisticOperation {
                 return outcome;
             }
         }
-        // Если не сработало (например, из-за неточности суммы), возвращаем последний исход
-        self.outcomes.last().expect("Нет исходов для операции")
+        // If it didn't work (for example, due to sum inaccuracy), return the last outcome
+        self.outcomes.last().expect("No outcomes for the operation")
     }
 } 

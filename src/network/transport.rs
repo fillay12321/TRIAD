@@ -1,15 +1,18 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::os::fd::AsRawFd;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use uuid::Uuid;
 use log::{debug, error, info, warn};
+use quinn::{ClientConfig, Endpoint};
 
 use crate::network::error::NetworkError;
 use crate::network::types::{Message, NetworkEvent, PeerInfo};
 use crate::network::peer::PeerManager;
+use crate::network::MessageType;
 
 /// Максимальный размер сообщения (10 МБ)
 const MAX_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
@@ -27,7 +30,7 @@ pub struct TransportService {
     /// Менеджер узлов
     peer_manager: Arc<RwLock<PeerManager>>,
     /// Активные соединения с узлами
-    connections: Arc<Mutex<HashMap<Uuid, TcpStream>>>,
+    connections: Arc<Mutex<HashMap<Uuid, mpsc::Sender<Message>>>>,
     /// Флаг, указывающий, запущен ли сервис
     running: bool,
 }
@@ -92,10 +95,13 @@ impl TransportService {
                             }
                         };
                         
-                        // Добавляем соединение в список активных
+                        // Создаём канал для отправки сообщений этому узлу
+                        let (tx, mut rx) = mpsc::channel::<Message>(100);
+                        
+                        // Добавляем отправитель в список активных соединений
                         {
                             let mut conns = connections.lock().await;
-                            conns.insert(peer_id, stream.clone());
+                            conns.insert(peer_id, tx);
                         }
                         
                         // Обновляем время последнего взаимодействия
@@ -106,7 +112,56 @@ impl TransportService {
                             }
                         }
                         
-                        // Запускаем обработку сообщений от этого узла
+                        // Создаем второй сокет через дупликацию файлового дескриптора
+                        // для отправки сообщений в отдельной задаче
+                        let writer_stream = match create_writer_stream(&stream).await {
+                            Ok(stream) => stream,
+                            Err(e) => {
+                                error!("Ошибка создания потока для записи: {}", e);
+                                continue;
+                            }
+                        };
+                        
+                        // Запускаем задачу для отправки сообщений узлу
+                        tokio::spawn(async move {
+                            let mut writer = writer_stream;
+                            while let Some(message) = rx.recv().await {
+                                // Сериализуем сообщение
+                                match bincode::serialize(&message) {
+                                    Ok(message_bytes) => {
+                                        // Проверяем размер сообщения
+                                        if message_bytes.len() > MAX_MESSAGE_SIZE {
+                                            error!("Слишком большое сообщение для отправки узлу {}: {} байт",
+                                                peer_id, message_bytes.len());
+                                            continue;
+                                        }
+                                        
+                                        // Сначала отправляем размер сообщения (4 байта)
+                                        let message_len = (message_bytes.len() as u32).to_be_bytes();
+                                        if let Err(e) = writer.write_all(&message_len).await {
+                                            error!("Ошибка отправки размера сообщения узлу {}: {}", peer_id, e);
+                                            break;
+                                        }
+                                        
+                                        // Затем отправляем само сообщение
+                                        if let Err(e) = writer.write_all(&message_bytes).await {
+                                            error!("Ошибка отправки сообщения узлу {}: {}", peer_id, e);
+                                            break;
+                                        }
+                                        
+                                        debug!("Отправлено сообщение узлу {}: тип={:?}, id={}",
+                                            peer_id, message.message_type, message.id);
+                                    },
+                                    Err(e) => {
+                                        error!("Ошибка сериализации сообщения для узла {}: {}", peer_id, e);
+                                    }
+                                }
+                            }
+                            
+                            info!("Закрыт канал отправки сообщений для узла {}", peer_id);
+                        });
+                        
+                        // Запускаем обработку входящих сообщений от этого узла
                         let conn_event_sender = event_sender.clone();
                         let conn_peer_manager = peer_manager.clone();
                         
@@ -146,30 +201,14 @@ impl TransportService {
     
     /// Отправляет сообщение узлу
     pub async fn send_message(&self, peer_id: Uuid, message: Message) -> Result<(), NetworkError> {
-        // Сериализуем сообщение
-        let message_bytes = bincode::serialize(&message)
-            .map_err(|e| NetworkError::Serialization(e.to_string()))?;
+        // Получаем отправитель сообщений для узла или создаём новое соединение
+        let sender = self.get_or_create_connection(peer_id).await?;
         
-        // Проверяем размер сообщения
-        if message_bytes.len() > MAX_MESSAGE_SIZE {
-            return Err(NetworkError::Internal(format!(
-                "Размер сообщения превышает максимально допустимый ({} > {})",
-                message_bytes.len(),
-                MAX_MESSAGE_SIZE
-            )));
+        // Отправляем сообщение через канал
+        if let Err(_) = sender.send(message.clone()).await {
+            error!("Ошибка отправки сообщения через канал узлу {}", peer_id);
+            return Err(NetworkError::ConnectionFailed(format!("Канал закрыт для узла {}", peer_id)));
         }
-        
-        // Получаем соединение с узлом или создаём новое
-        let mut stream = self.get_or_create_connection(peer_id).await?;
-        
-        // Сначала отправляем размер сообщения (4 байта)
-        let message_len = (message_bytes.len() as u32).to_be_bytes();
-        stream.write_all(&message_len).await
-            .map_err(|e| NetworkError::Io(e))?;
-        
-        // Затем отправляем само сообщение
-        stream.write_all(&message_bytes).await
-            .map_err(|e| NetworkError::Io(e))?;
         
         // Обновляем время последнего взаимодействия
         {
@@ -179,22 +218,32 @@ impl TransportService {
             }
         }
         
-        debug!("Отправлено сообщение узлу {}: тип={:?}, id={}",
+        debug!("Сообщение помещено в очередь для отправки узлу {}: тип={:?}, id={}",
             peer_id, message.message_type, message.id);
         
         Ok(())
+    }
+
+    pub async fn send_quic(&self, data: Vec<u8>) {
+        // Пример адреса: "127.0.0.1:5000"
+        let server_addr = "127.0.0.1:5000".parse().unwrap();
+        let mut endpoint = Endpoint::client("0.0.0.0:0".parse().unwrap()).unwrap();
+        let conn = endpoint.connect(server_addr, "localhost").unwrap().await.unwrap();
+        let mut stream = conn.open_uni().await.unwrap();
+        stream.write_all(&data).await.unwrap();
+        stream.finish().unwrap();
     }
     
     /// Обрабатывает входящее соединение
     async fn handle_connection(
         mut stream: TcpStream,
         peer_id: Uuid,
-        node_id: Uuid,
+        _node_id: Uuid,
         event_sender: mpsc::Sender<NetworkEvent>,
         peer_manager: Arc<RwLock<PeerManager>>,
     ) -> Result<(), NetworkError> {
+        let _buffer = vec![0u8; READ_BUFFER_SIZE];
         let mut size_buffer = [0u8; 4];
-        let mut read_buffer = vec![0u8; READ_BUFFER_SIZE];
         
         loop {
             // Читаем размер сообщения
@@ -281,13 +330,13 @@ impl TransportService {
         }
     }
     
-    /// Получает существующее соединение с узлом или создаёт новое
-    async fn get_or_create_connection(&self, peer_id: Uuid) -> Result<TcpStream, NetworkError> {
+    /// Получает существующий отправитель сообщений для узла или создаёт новое соединение
+    async fn get_or_create_connection(&self, peer_id: Uuid) -> Result<mpsc::Sender<Message>, NetworkError> {
         // Проверяем, есть ли уже соединение
         {
             let connections = self.connections.lock().await;
-            if let Some(stream) = connections.get(&peer_id) {
-                return Ok(stream.clone());
+            if let Some(sender) = connections.get(&peer_id) {
+                return Ok(sender.clone());
             }
         }
         
@@ -302,21 +351,75 @@ impl TransportService {
             Ok(stream) => {
                 info!("Установлено новое соединение с узлом {} ({})", peer_id, peer_addr);
                 
-                // Добавляем соединение в список активных
+                // Создаём канал для отправки сообщений
+                let (tx, mut rx) = mpsc::channel::<Message>(100);
+                
+                // Клонируем отправитель для возврата
+                let sender = tx.clone();
+                
+                // Добавляем отправитель в список активных соединений
                 {
                     let mut connections = self.connections.lock().await;
-                    connections.insert(peer_id, stream.clone());
+                    connections.insert(peer_id, tx);
                 }
                 
-                // Запускаем обработку сообщений от этого узла
+                // Создаем второй сокет через дупликацию файлового дескриптора
+                // для отправки сообщений
+                let writer_stream = match create_writer_stream(&stream).await {
+                    Ok(stream) => stream,
+                    Err(e) => {
+                        error!("Ошибка создания потока для записи: {}", e);
+                        return Err(NetworkError::Io(e));
+                    }
+                };
+                
+                // Запускаем задачу для отправки сообщений узлу
+                tokio::spawn(async move {
+                    let mut writer = writer_stream;
+                    while let Some(message) = rx.recv().await {
+                        // Сериализуем сообщение
+                        match bincode::serialize(&message) {
+                            Ok(message_bytes) => {
+                                // Проверяем размер сообщения
+                                if message_bytes.len() > MAX_MESSAGE_SIZE {
+                                    error!("Слишком большое сообщение для отправки узлу {}: {} байт",
+                                        peer_id, message_bytes.len());
+                                    continue;
+                                }
+                                
+                                // Сначала отправляем размер сообщения (4 байта)
+                                let message_len = (message_bytes.len() as u32).to_be_bytes();
+                                if let Err(e) = writer.write_all(&message_len).await {
+                                    error!("Ошибка отправки размера сообщения узлу {}: {}", peer_id, e);
+                                    break;
+                                }
+                                
+                                // Затем отправляем само сообщение
+                                if let Err(e) = writer.write_all(&message_bytes).await {
+                                    error!("Ошибка отправки сообщения узлу {}: {}", peer_id, e);
+                                    break;
+                                }
+                                
+                                debug!("Отправлено сообщение узлу {}: тип={:?}, id={}",
+                                    peer_id, message.message_type, message.id);
+                            },
+                            Err(e) => {
+                                error!("Ошибка сериализации сообщения для узла {}: {}", peer_id, e);
+                            }
+                        }
+                    }
+                    
+                    info!("Закрыт канал отправки сообщений для узла {}", peer_id);
+                });
+                
+                // Запускаем обработку входящих сообщений
                 let event_sender = self.event_sender.clone();
                 let peer_manager = self.peer_manager.clone();
                 let node_id = self.node_id;
-                let stream_clone = stream.clone();
                 
                 tokio::spawn(async move {
                     if let Err(e) = Self::handle_connection(
-                        stream_clone,
+                        stream,
                         peer_id,
                         node_id,
                         event_sender,
@@ -326,7 +429,7 @@ impl TransportService {
                     }
                 });
                 
-                Ok(stream)
+                Ok(sender)
             },
             Err(e) => {
                 error!("Не удалось установить соединение с узлом {} ({}): {}", peer_id, peer_addr, e);
@@ -334,4 +437,13 @@ impl TransportService {
             }
         }
     }
+}
+
+/// Создает второй сокет через дупликацию файлового дескриптора
+async fn create_writer_stream(stream: &TcpStream) -> std::io::Result<TcpStream> {
+    // Получаем адрес, к которому подключен сокет
+    let addr = stream.peer_addr()?;
+    
+    // Создаем новое соединение к тому же адресу
+    TcpStream::connect(addr).await
 } 

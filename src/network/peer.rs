@@ -5,52 +5,52 @@ use uuid::Uuid;
 use crate::network::types::PeerInfo;
 use crate::network::error::NetworkError;
 
-/// Время, после которого узел считается неактивным
+/// Time after which a node is considered inactive
 pub const PEER_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Менеджер узлов для отслеживания подключенных пиров
+/// Node manager for tracking connected peers
 #[derive(Debug)]
 pub struct PeerManager {
-    /// Мапа известных узлов: ключ - ID узла, значение - информация об узле
+    /// Map of known nodes: key - node ID, value - node info
     peers: HashMap<Uuid, PeerInfo>,
 }
 
 impl PeerManager {
-    /// Создаёт новый менеджер узлов
+    /// Creates a new node manager
     pub fn new() -> Self {
         Self {
             peers: HashMap::new(),
         }
     }
     
-    /// Добавляет или обновляет информацию об узле
+    /// Adds or updates node information
     pub fn add_peer(&mut self, peer_info: PeerInfo) -> bool {
         let is_new = !self.peers.contains_key(&peer_info.id);
         self.peers.insert(peer_info.id, peer_info);
         is_new
     }
     
-    /// Возвращает информацию об узле по ID
+    /// Returns node information by ID
     pub fn get_peer(&self, peer_id: &Uuid) -> Option<&PeerInfo> {
         self.peers.get(peer_id)
     }
     
-    /// Возвращает изменяемую ссылку на информацию об узле по ID
+    /// Returns a mutable reference to node information by ID
     pub fn get_peer_mut(&mut self, peer_id: &Uuid) -> Option<&mut PeerInfo> {
         self.peers.get_mut(peer_id)
     }
     
-    /// Удаляет узел из списка известных
+    /// Removes a node from the list of known nodes
     pub fn remove_peer(&mut self, peer_id: &Uuid) -> Option<PeerInfo> {
         self.peers.remove(peer_id)
     }
     
-    /// Возвращает список всех известных узлов
+    /// Returns a list of all known nodes
     pub fn get_all_peers(&self) -> Vec<PeerInfo> {
         self.peers.values().cloned().collect()
     }
     
-    /// Возвращает список только активных узлов
+    /// Returns a list of only active nodes
     pub fn get_active_peers(&self) -> Vec<PeerInfo> {
         self.peers
             .values()
@@ -59,12 +59,12 @@ impl PeerManager {
             .collect()
     }
     
-    /// Возвращает количество известных узлов
+    /// Returns the number of known nodes
     pub fn count(&self) -> usize {
         self.peers.len()
     }
     
-    /// Обновляет время последнего взаимодействия с узлом
+    /// Updates the last interaction time with a node
     pub fn update_last_seen(&mut self, peer_id: &Uuid) -> Result<(), NetworkError> {
         if let Some(peer) = self.peers.get_mut(peer_id) {
             peer.update_last_seen();
@@ -74,7 +74,7 @@ impl PeerManager {
         }
     }
     
-    /// Получает адрес узла по его ID
+    /// Gets the address of a node by its ID
     pub fn get_peer_address(&self, peer_id: &Uuid) -> Result<SocketAddr, NetworkError> {
         if let Some(peer) = self.peers.get(peer_id) {
             Ok(peer.address)
@@ -83,7 +83,7 @@ impl PeerManager {
         }
     }
     
-    /// Очищает неактивные узлы
+    /// Cleans up inactive nodes
     pub fn cleanup_inactive_peers(&mut self) -> Vec<Uuid> {
         let inactive: Vec<Uuid> = self.peers
             .iter()
@@ -98,7 +98,7 @@ impl PeerManager {
         inactive
     }
     
-    /// Ищет узел по адресу
+    /// Finds a node by address
     pub fn find_peer_by_address(&self, address: &SocketAddr) -> Option<&PeerInfo> {
         self.peers
             .values()
