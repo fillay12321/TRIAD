@@ -1,4 +1,4 @@
-use crate::quantum::field::{QuantumField, QuantumState, StateVector};
+use crate::quantum::field::{QuantumField, QuantumState, StateVector, QuantumWave};
 use crate::quantum::interference::InterferenceEngine;
 use crate::quantum::prob_ops::{ProbabilisticOperation, OperationOutcome};
 use serde::{Serialize, Deserialize};
@@ -72,17 +72,16 @@ impl ConsensusNode {
 
     pub fn process_message(&mut self, message: ConsensusMessage) -> Result<QuantumState, String> {
         let start = std::time::Instant::now();
-        
         // Check cache
         if let Ok(cache) = self.cache.read() {
             if cache.contains_key(&message.state_id) {
-                let state = self.field.get_state(&message.state_id)?;
+                let wave = self.field.get_wave(&message.state_id)?;
+                let state = QuantumState::from(wave);
                 let duration = start.elapsed();
                 println!("Message processing time (cache): {:?}", duration);
                 return Ok(state);
             }
         }
-
         // Create a probabilistic operation for data processing
         let op = ProbabilisticOperation {
             description: "Data processing".to_string(),
@@ -105,10 +104,8 @@ impl ConsensusNode {
                 },
             ],
         };
-
         // Perform probabilistic processing
         let outcome = op.execute();
-        
         // Create a quantum state based on the processing result
         let state = QuantumState {
             id: message.state_id.clone(),
@@ -122,18 +119,21 @@ impl ConsensusNode {
                 },
             ],
         };
-
         // Add state to the field
-        self.field.add_state(message.state_id.clone(), state.clone());
-        
+        let wave = QuantumWave::new(
+            message.state_id.clone(),
+            state.amplitude,
+            state.phase,
+            state.shard_id.clone(),
+            state.superposition.clone(),
+        );
+        self.field.add_wave(message.state_id.clone(), wave);
         // Save to cache
         if let Ok(mut cache) = self.cache.write() {
             cache.insert(message.state_id, true);
         }
-        
         let duration = start.elapsed();
         println!("Message processing time: {:?}", duration);
-        
         Ok(state)
     }
 
@@ -141,7 +141,8 @@ impl ConsensusNode {
         let start = std::time::Instant::now();
         
         // Get state
-        let state = self.field.get_state(state_id)?;
+        let wave = self.field.get_wave(state_id)?;
+        let state = QuantumState::from(wave);
         
         // Create a second state for interference
         let interference_state = QuantumState {

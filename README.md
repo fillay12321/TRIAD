@@ -1,25 +1,24 @@
 # TRIAD: Next-Generation Distributed Network
-TRIAD is a research project aimed at creating a high-performance, energy-efficient, and secure blockchain network inspired by quantum computing principles. It integrates with Ethereum's Pectra upgrade, addressing key challenges in scalability, energy consumption, and security of modern blockchain systems.
+TRIAD is a research project aimed at creating a high-performance, energy-efficient, and secure blockchain network inspired by quantum computing principles.
 
 ## Project Goals
 Develop a distributed network that:
-- Increases transaction throughput (TPS) by 10x or more compared to Ethereum.
+- Increases transaction throughput (TPS) by 10x or more compared to mainstream L1/L2.
 - Reduces energy consumption by 95% compared to existing solutions.
 - Provides quantum-resistant cryptography to protect against future attacks.
-- Ensures full compatibility with Ethereum's Pectra upgrade (Ethereum 2.0).
+--
 
 ## Key Innovations
 - **Quantum-Inspired Algorithms:**
   - Probabilistic transaction processing based on superposition principles.
   - Interference patterns for accelerated consensus (latency <1 ms).
-- **Ethereum Enhancements:**
-  - Integration with Pectra's sharding and smart contract standards (EIP-7702, EIP-7594).
-  - Parallel transaction processing via efficient sharding.
+- **Protocol Enhancements:**
+  - Efficient sharding and parallel transaction processing.
   - Transaction cost reduction by 90%.
 - **Energy Efficiency:**
   - Per-node power consumption: 0.1 mW.
   - Base network power consumption: 1 mW.
-  - Energy savings of up to 95% compared to Ethereum.
+  - Energy savings of up to 95% vs typical L1/L2 baselines.
 
 ## Mathematical Model
 1. **Consensus**
@@ -67,19 +66,19 @@ where:
 - χ — error distribution
 
 ## Technical Advantages
-- **Performance:** TPS up to 10,000 (10x higher than Ethereum L2)
+- **Performance:** TPS up to 10,000
 - **Latency:** <1 ms for consensus
 - **Scalability:** Linear performance growth with node count: T(n) = T_0 + c * n, where T_0 is base processing time, c is a constant
 - **Security:** Quantum-resistant cryptography and probabilistic transaction verification
-- **Integration:** Full compatibility with Ethereum Pectra, including EVM and new EIPs
+--
 
-## Comparison with Ethereum
-| Metric              | Ethereum L1 | Ethereum L2 | TRIAD      |
-|---------------------|-------------|-------------|------------|
-| TPS                 | 15–30       | ~1000       | 10,000+    |
-| Energy Consumption  | High        | Medium      | 0.1 mW/node|
-| Latency             | ~10 s       | ~1 s        | <1 ms      |
-| Scalability         | Limited     | Moderate    | Linear     |
+## Target Metrics
+| Metric              | Target      |
+|---------------------|-------------|
+| TPS                 | 10,000+     |
+| Energy Consumption  | 0.1 mW/node |
+| Latency             | <1 ms       |
+| Scalability         | Linear      |
 
 ## Installation and Setup
 **Requirements:**
@@ -121,7 +120,7 @@ triad/
 ## Performance Metrics
 - **TPS:** 10,000+ (tested on 100 nodes with Intel Xeon 3.0 GHz)
 - **Latency:** <1 ms (consensus time)
-- **Energy Efficiency:** 95% reduction compared to Ethereum
+- **Energy Efficiency:** 95% reduction vs typical L1/L2
 - **Scalability:** Supports up to 10,000 nodes with linear performance growth
 
 ## Contributing
@@ -136,7 +135,7 @@ MIT License. See LICENSE file.
 - GitHub: https://github.com/fillay12321
 
 ## Acknowledgments
-- Ethereum team for inspiration and the Pectra upgrade
+--
 - Rust community for powerful tools
 - All TRIAD project contributors
 

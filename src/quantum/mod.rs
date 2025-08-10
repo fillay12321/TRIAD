@@ -3,7 +3,7 @@ pub mod interference;
 pub mod prob_ops;
 pub mod consensus;
 
-pub use field::{QuantumField, QuantumState, StateVector, InterferencePoint};
+pub use field::{QuantumField, QuantumState, StateVector, InterferencePoint, QuantumWave};
 pub use interference::{InterferenceEngine, InterferenceAnalysis};
 pub use prob_ops::{ProbabilisticOperation, OperationOutcome};
 
@@ -25,7 +25,14 @@ impl QuantumSystem {
 
     pub async fn add_state(&self, key: String, state: QuantumState) {
         let mut field = self.field.write().await;
-        field.add_state(key, state);
+        let wave = QuantumWave::new(
+            key.clone(),
+            state.amplitude,
+            state.phase,
+            state.shard_id,
+            state.superposition,
+        );
+        field.add_wave(key, wave);
     }
 
     pub async fn measure(&self, key: &str) -> Option<StateVector> {
@@ -35,7 +42,9 @@ impl QuantumSystem {
 
     pub async fn get_interference_pattern(&self) -> Vec<InterferencePoint> {
         let field = self.field.read().await;
-        let states: Vec<QuantumState> = field.states.values().cloned().collect();
+        let states: Vec<QuantumState> = field.active_waves.values()
+            .map(|wave| QuantumState::from(wave.clone()))
+            .collect();
         self.interference_engine.calculate_interference_pattern(&states)
     }
 

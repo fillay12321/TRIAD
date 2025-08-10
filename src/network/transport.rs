@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::os::fd::AsRawFd;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use uuid::Uuid;
 use log::{debug, error, info, warn};
-use quinn::{ClientConfig, Endpoint};
+use quinn::Endpoint;
 
 use crate::network::error::NetworkError;
 use crate::network::types::{Message, NetworkEvent, PeerInfo};
@@ -20,6 +19,7 @@ const MAX_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
 const READ_BUFFER_SIZE: usize = 8192;
 
 /// Сервис транспорта для обмена сообщениями
+#[derive(Debug)]
 pub struct TransportService {
     /// ID текущего узла
     node_id: Uuid,
@@ -222,6 +222,12 @@ impl TransportService {
             peer_id, message.message_type, message.id);
         
         Ok(())
+    }
+    
+    /// Возвращает список активных узлов
+    pub async fn get_active_peers(&self) -> Result<Vec<PeerInfo>, NetworkError> {
+        let manager = self.peer_manager.read().await;
+        Ok(manager.get_active_peers())
     }
 
     pub async fn send_quic(&self, data: Vec<u8>) {

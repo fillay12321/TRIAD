@@ -1,5 +1,5 @@
 use super::{Transaction, TransactionProcessor, TransactionStatus};
-use crate::quantum::field::{QuantumField, QuantumState, StateVector};
+use crate::quantum::field::{QuantumField, QuantumState, StateVector, QuantumWave};
 use crate::quantum::prob_ops::{ProbabilisticOperation, OperationOutcome};
 use crate::quantum::interference::InterferenceEngine;
 use std::collections::HashMap;
@@ -137,7 +137,14 @@ impl TransactionProcessor for QuantumTransactionProcessor {
         // Добавляем состояние в квантовое поле
         {
             let mut field = QUANTUM_FIELD.lock().unwrap();
-            field.add_state(transaction.id.to_string(), quantum_state);
+            let wave = QuantumWave::new(
+                transaction.id.to_string(),
+                quantum_state.amplitude,
+                quantum_state.phase,
+                quantum_state.shard_id,
+                quantum_state.superposition,
+            );
+            field.add_wave(transaction.id.to_string(), wave);
         }
 
         // Создаем вероятностную операцию
@@ -176,7 +183,8 @@ impl TransactionProcessor for QuantumTransactionProcessor {
 
         // Проверяем квантовое состояние
         if let Ok(field) = QUANTUM_FIELD.lock() {
-            if let Ok(state) = field.get_state(&transaction.id.to_string()) {
+            if let Ok(wave) = field.get_wave(&transaction.id.to_string()) {
+                let state = QuantumState::from(wave);
                 // Проверяем интерференцию с другими транзакциями
                 let pattern = self.interference_engine.calculate_interference_pattern(&[state]);
                 let analysis = self.interference_engine.analyze_interference(&pattern);

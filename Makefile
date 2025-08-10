@@ -14,7 +14,7 @@ build:
 	$(CARGO) build --$(BUILD_TYPE)
 
 build-simulator:
-	$(CARGO) build --$(BUILD_TYPE) --example ethereum_simulator
+	@echo "(disabled) ethereum_simulator example removed"
 
 run:
 	$(CARGO) run --$(BUILD_TYPE)
@@ -26,37 +26,37 @@ clean:
 	$(CARGO) clean
 	rm -rf target
 
-# Запуск эмулятора Ethereum
+# Запуск эмулятора Ethereum (отключено)
 run-simulator:
-	$(CARGO) run --$(BUILD_TYPE) --example ethereum_simulator -- $(ETH_ADDRESS) $(PORT)
+	@echo "(disabled) Ethereum simulator removed"
 
-# Запуск стресс-теста эмулятора с автоматической отправкой транзакций
+# Запуск стресс-теста эмулятора с автоматической отправкой транзакций (отключено)
 stress-test:
-	$(CARGO) run --$(BUILD_TYPE) --example ethereum_simulator -- $(ETH_ADDRESS) $(PORT) stress $(DURATION)
+	@echo "(disabled) Ethereum simulator stress removed"
 
-# Запуск квантового эмулятора Ethereum
+# Запуск квантового эмулятора Ethereum (отключено)
 quantum-simulator:
-	$(CARGO) run --$(BUILD_TYPE) --example ethereum_simulator -- $(ETH_ADDRESS) $(PORT) quantum $(CONSENSUS_NODES) $(SHARDS)
+	@echo "(disabled) Quantum Ethereum simulator removed"
 
-# Запуск квантового стресс-теста эмулятора
+# Запуск квантового стресс-теста эмулятора (отключено)
 quantum-stress-test:
-	$(CARGO) run --$(BUILD_TYPE) --example ethereum_simulator -- $(ETH_ADDRESS) $(PORT) stress quantum $(CONSENSUS_NODES) $(SHARDS) $(DURATION)
+	@echo "(disabled) Ethereum simulator quantum stress removed"
 
 # Дополнительные команды
 help:
 	@echo "Доступные команды:"
 	@echo "  make build              - Собрать проект"
-	@echo "  make build-simulator    - Собрать эмулятор Ethereum"
+    @echo "  make build-simulator    - (disabled)"
 	@echo "  make run                - Запустить основной проект"
 	@echo "  make test               - Запустить тесты"
 	@echo "  make clean              - Очистить сборочные файлы"
-	@echo "  make run-simulator      - Запустить эмулятор Ethereum"
+    @echo "  make run-simulator      - (disabled)"
 	@echo "  make stress-test        - Запустить стресс-тест эмулятора с автоотправкой транзакций"
-	@echo "  make quantum-simulator  - Запустить квантовый эмулятор Ethereum"
+    @echo "  make quantum-simulator  - (disabled)"
 	@echo "  make quantum-stress-test - Запустить квантовый стресс-тест эмулятора"
 	@echo ""
 	@echo "Переменные:"
-	@echo "  ETH_ADDRESS             - Ethereum адрес (по умолчанию: 0x1234567890abcdef1234567890abcdef12345678)"
+    @echo "  ETH_ADDRESS             - (disabled)"
 	@echo "  PORT                    - Порт (по умолчанию: 23000)"
 	@echo "  DURATION                - Длительность стресс-теста в секундах (по умолчанию: 20)"
 	@echo "  CONSENSUS_NODES         - Число узлов квантового консенсуса (по умолчанию: 4)"

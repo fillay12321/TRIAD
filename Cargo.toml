@@ -13,6 +13,7 @@ num-complex = { version = "0.4", features = ["serde"] }  # Для работы �
 nalgebra = "0.32.3"    # Для матричных операций
 rand = "0.8.5"
 rand_core = "0.6"
+ed25519-dalek = "2"
 
 # Сериализация/десериализация
 serde = { version = "1.0", features = ["derive"] }
@@ -35,6 +36,11 @@ rayon = "1.7"  # Для параллельной обработки
 # Async traits
 async-trait = "0.1"
 futures = "0.3"
+
+# HTTP server dependencies
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
 
 # Дополнительные зависимости для сетевого взаимодействия
 bincode = "1.3"

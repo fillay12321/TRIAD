@@ -190,10 +190,10 @@ mod tests {
     }
 
     #[test]
-    fn test_ethereum_like_operation() {
-        // Создаем вероятностную операцию, аналогичную по сложности операциям в Ethereum
+    fn test_complex_probabilistic_operation() {
+        // Создаем вероятностную операцию, аналогичную по сложности типичным VM-операциям
         let op = ProbabilisticOperation {
-            description: "Ethereum-like operation".to_string(),
+            description: "VM-like operation".to_string(),
             outcomes: vec![
                 OperationOutcome {
                     label: "Success".to_string(),

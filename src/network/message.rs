@@ -10,6 +10,7 @@ use crate::network::transport::TransportService;
 use crate::network::MessageType;
 
 /// Сервис для обработки и маршрутизации сообщений
+#[derive(Debug)]
 pub struct MessageService {
     /// ID текущего узла
     node_id: Uuid,
@@ -49,7 +50,7 @@ impl MessageService {
     
     /// Отправляет сообщение всем известным узлам
     pub async fn broadcast(&self, message_type: MessageType, payload: Vec<u8>) -> Result<(), NetworkError> {
-        // Создаём сообщение
+        // Создаём сообщение для broadcast
         let message = Message::new(
             self.node_id,
             None, // Broadcast
@@ -57,14 +58,31 @@ impl MessageService {
             payload,
         );
         
-        // Получаем список всех узлов из транспорта (в реальной реализации)
-        // Для примера просто логируем факт отправки
         info!("Рассылка сообщения всем узлам: тип={:?}, id={}", message_type, message.id);
         
-        // В реальной реализации здесь нужно получить список узлов и отправить каждому
-        // Для простоты примера этот метод пока ничего не делает
+        // Получаем список всех активных узлов
+        let peers = self.transport.get_active_peers().await?;
         
-        Ok(())
+        // Отправляем сообщение каждому узлу
+        let mut errors = Vec::new();
+        for peer in peers {
+            match self.transport.send_message(peer.id, message.clone()).await {
+                Ok(_) => {
+                    debug!("Сообщение отправлено узлу {}: {}", peer.name, peer.id);
+                }
+                Err(e) => {
+                    error!("Ошибка отправки сообщения узлу {}: {}", peer.id, e);
+                    errors.push(e);
+                }
+            }
+        }
+        
+        // Если были ошибки, возвращаем первую
+        if let Some(first_error) = errors.into_iter().next() {
+            Err(first_error)
+        } else {
+            Ok(())
+        }
     }
     
     /// Обрабатывает входящее сообщение

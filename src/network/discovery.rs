@@ -33,6 +33,7 @@ struct DiscoveryMessage {
 }
 
 /// Сервис обнаружения узлов в локальной сети
+#[derive(Debug)]
 pub struct DiscoveryService {
     /// ID текущего узла
     node_id: Uuid,
@@ -82,18 +83,27 @@ impl DiscoveryService {
             }
         };
         
-        // Подготавливаем сокет для обнаружения узлов
-        let socket = match UdpSocket::bind(SocketAddr::new(local_ip, DEFAULT_DISCOVERY_PORT)).await {
-            Ok(socket) => {
-                if let Err(e) = socket.set_broadcast(true) {
-                    error!("Не удалось включить широковещательный режим: {}", e);
-                    return Err(NetworkError::Io(e));
+        // Автоматический выбор свободного discovery-порта
+        let mut port = DEFAULT_DISCOVERY_PORT;
+        let socket = loop {
+            match UdpSocket::bind(SocketAddr::new(local_ip, port)).await {
+                Ok(socket) => {
+                    if let Err(e) = socket.set_broadcast(true) {
+                        error!("Не удалось включить широковещательный режим: {}", e);
+                        return Err(NetworkError::Io(e));
+                    }
+                    info!("Discovery UDP-порт выбран: {}", port);
+                    break socket;
+                },
+                Err(e) => {
+                    if port < DEFAULT_DISCOVERY_PORT + 100 {
+                        port += 1;
+                        continue;
+                    } else {
+                        error!("Не удалось привязать UDP-сокет ни к одному порту: {}", e);
+                        return Err(NetworkError::Io(e));
+                    }
                 }
-                socket
-            },
-            Err(e) => {
-                error!("Не удалось привязать UDP-сокет: {}", e);
-                return Err(NetworkError::Io(e));
             }
         };
         

@@ -1,3 +1,4 @@
+// Legacy modules (temporary during migration)
 pub mod quantum;
 pub mod sharding;
 pub mod network;

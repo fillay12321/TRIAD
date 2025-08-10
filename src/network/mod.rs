@@ -1,13 +1,17 @@
 //! Network module for message exchange between nodes in a local network
 //! Provides node discovery, connection establishment, and message exchange
 
-mod types;
+pub mod types;
 mod discovery;
 mod transport;
 mod message;
 mod error;
 mod peer;
 mod handler;
+mod quantum_handler;
+mod http_server;
+mod http_client;
+pub mod real_node;
 
 pub use error::NetworkError;
 pub use discovery::DiscoveryService;
@@ -15,25 +19,23 @@ pub use transport::TransportService;
 pub use message::MessageService;
 pub use peer::PeerManager;
 pub use handler::MessageHandler;
+pub use quantum_handler::{QuantumNetworkHandler, QuantumNetworkStats, NetworkInterferenceEvent};
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
-use log::{debug, error, info, warn};
-use std::collections::HashMap;
+use log::{debug, error, info};
 use std::time::SystemTime;
-use crate::transaction::{Transaction, TransactionStatus};
-use crate::quantum::consensus::ConsensusState;
+use crate::transaction::{Transaction, SmartContract};
+use crate::quantum::consensus::{ConsensusMessage, ConsensusState};
 use crate::sharding::ShardEvent;
 use crate::error_analysis::ErrorContext;
 use crate::semantic::SemanticAction;
-use crate::transaction::SmartContract;
-use crate::quantum::consensus::ConsensusMessage;
 use serde::{Serialize, Deserialize};
-use crate::network::types::PeerInfo;
-use crate::network::types::NetworkEvent;
+use crate::network::types::{PeerInfo, NetworkEvent};
 
 /// Main class of the network module
+#[derive(Debug)]
 pub struct Network {
     /// Unique node identifier
     node_id: Uuid,
@@ -167,9 +169,6 @@ impl Network {
                         error!("Error processing node disconnection: {}", e);
                     }
                 },
-                _ => {
-                    debug!("Received other network event: {:?}", event);
-                }
             }
         }
         
