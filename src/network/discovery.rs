@@ -68,6 +68,7 @@ struct DHTEntry {
 
 /// Peer exchange сообщение
 #[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize)]
 struct PeerExchangeMessage {
     sender_id: Uuid,
     peers: Vec<SerializablePeerInfo>,
@@ -311,10 +312,15 @@ impl DiscoveryService {
         info!("🌍 Запуск глобального P2P с автоматическим обнаружением...");
         
         // 1. Запускаем QUIC сервер для приема соединений
-        self.start_quic_server().await?;
+        if let Err(e) = self.start_quic_server().await {
+            warn!("⚠️ QUIC сервер не запущен: {} - продолжаем без него", e);
+        } else {
+            info!("✅ QUIC сервер запущен");
+        }
         
-        // 2. Определяем внешний IP для NAT traversal
+        // 2. Определяем внешний IP для NAT traversal (с обработкой ошибок)
         let external_ip = self.get_external_ip().await;
+        
         if let Some(ip) = &external_ip {
             info!("🌍 Внешний IP: {} - узел доступен из интернета", ip);
         } else {
@@ -322,10 +328,18 @@ impl DiscoveryService {
         }
         
         // 3. Запускаем peer exchange (автоматическое обнаружение)
-        self.start_peer_exchange().await?;
+        if let Err(e) = self.start_peer_exchange().await {
+            warn!("⚠️ Peer exchange не запущен: {} - продолжаем без него", e);
+        } else {
+            info!("✅ Peer exchange запущен");
+        }
         
         // 4. Запускаем DHT обновления с relay функционалом
-        self.start_dht_updates().await?;
+        if let Err(e) = self.start_dht_updates().await {
+            warn!("⚠️ DHT обновления не запущены: {} - продолжаем без них", e);
+        } else {
+            info!("✅ DHT обновления запущены");
+        }
         
         // 5. Проверяем, можем ли стать relay узлом
         if self.can_become_relay().await {
@@ -479,6 +493,11 @@ impl DiscoveryService {
         let event_sender = self.event_sender.clone();
         let peer_manager = self.peer_manager.clone();
         let dht_table = self.dht_table.clone();
+        let quic_endpoint = self.quic_endpoint.clone();
+        let node_id = self.node_id;
+        let node_name = self.node_name.clone();
+        let tcp_port = self.tcp_port;
+        let quic_port = self.quic_port;
         
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(PEER_EXCHANGE_INTERVAL);
@@ -492,15 +511,40 @@ impl DiscoveryService {
                     
                     // Автоматически делимся нашими пирами с другими узлами
                     for peer in &peers {
-                        // TODO: Отправляем peer exchange сообщение
                         debug!("🔄 Обмен пирами с узлом: {}", peer.name);
+                        
+                        // Отправляем peer exchange через QUIC
+                        if let Some(endpoint) = quic_endpoint.lock().await.as_ref() {
+                            if let Err(e) = Self::send_peer_exchange(endpoint, peer, &node_id, &node_name, tcp_port, quic_port).await {
+                                debug!("⚠️ Ошибка peer exchange с {}: {}", peer.name, e);
+                            }
+                        }
                     }
                 }
                 
                 // Периодически ищем новые узлы через DHT
                 if peers.len() < 10 { // Если мало пиров, ищем активнее
                     debug!("🔍 Активный поиск узлов через DHT...");
-                    // TODO: DHT поиск новых узлов
+                    
+                    // Активно ищем узлы через известные IP адреса
+                    if let Some(external_ip) = Self::get_external_ip_static().await {
+                        let known_ips = vec![
+                            "193.233.127.169", // Локальный компьютер
+                            "4.210.177.129",   // Codespace
+                        ];
+                        
+                        for ip in known_ips {
+                            if ip != external_ip {
+                                let addr = format!("{}:{}", ip, 8081).parse::<SocketAddr>();
+                                if let Ok(socket_addr) = addr {
+                                    debug!("🔍 Пробуем подключиться к узлу: {}", socket_addr);
+                                    if let Err(e) = Self::try_connect_to_node(&quic_endpoint, socket_addr, &node_id, &node_name, tcp_port, quic_port).await {
+                                        debug!("⚠️ Не удалось подключиться к {}: {}", socket_addr, e);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -582,6 +626,18 @@ impl DiscoveryService {
 
     /// Получает внешний IP адрес с автоматическим NAT traversal
     async fn get_external_ip(&self) -> Option<String> {
+        // Создаем HTTP клиент с timeout и rustls
+        let client = match reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .use_rustls_tls()
+            .build() {
+            Ok(client) => client,
+            Err(e) => {
+                warn!("⚠️ Не удалось создать HTTP клиент: {}", e);
+                return None;
+            }
+        };
+        
         // Пытаемся получить внешний IP через публичные сервисы
         let ip_services = vec![
             "https://api.ipify.org",
@@ -591,21 +647,34 @@ impl DiscoveryService {
         ];
         
         for service in ip_services {
-            match reqwest::get(service).await {
-                Ok(response) => {
-                    if let Ok(ip) = response.text().await {
-                        let ip = ip.trim();
-                        if self.is_valid_ip(ip) {
-                            info!("🌍 Внешний IP определен: {} через {}", ip, service);
-                            return Some(ip.to_string());
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                client.get(service).send()
+            ).await {
+                Ok(Ok(response)) => {
+                    if response.status().is_success() {
+                        match tokio::time::timeout(
+                            std::time::Duration::from_secs(2),
+                            response.text()
+                        ).await {
+                            Ok(Ok(ip)) => {
+                                let ip = ip.trim();
+                                if self.is_valid_ip(ip) {
+                                    info!("🌍 Внешний IP определен: {} через {}", ip, service);
+                                    return Some(ip.to_string());
+                                }
+                            },
+                            Ok(Err(e)) => debug!("Ошибка чтения ответа от {}: {}", service, e),
+                            Err(_) => debug!("Timeout чтения ответа от {}", service),
                         }
                     }
                 },
-                Err(e) => debug!("Сервис {} недоступен: {}", service, e),
+                Ok(Err(e)) => debug!("Сервис {} недоступен: {}", service, e),
+                Err(_) => debug!("Timeout запроса к {}", service),
             }
         }
         
-        warn!("⚠️ Не удалось определить внешний IP");
+        warn!("⚠️ Не удалось определить внешний IP - используем локальный режим");
         None
     }
     
@@ -661,6 +730,150 @@ impl DiscoveryService {
         }
         
         info!("➕ Добавлено {} пиров от bootstrap узла", count);
+    }
+    
+    /// Отправляет peer exchange сообщение через QUIC
+    async fn send_peer_exchange(
+        endpoint: &Endpoint,
+        peer: &PeerInfo,
+        sender_id: &Uuid,
+        sender_name: &str,
+        tcp_port: u16,
+        quic_port: u16,
+    ) -> Result<(), NetworkError> {
+        // Создаем peer exchange сообщение
+        let peer_exchange_msg = PeerExchangeMessage {
+            sender_id: *sender_id,
+            peers: vec![SerializablePeerInfo {
+                id: *sender_id,
+                name: sender_name.to_string(),
+                address: format!("0.0.0.0:{}", tcp_port), // Будет заменено на реальный IP
+            }],
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        };
+        
+        // Сериализуем сообщение
+        let msg_bytes = bincode::serialize(&peer_exchange_msg)
+            .map_err(|e| NetworkError::Internal(format!("Failed to serialize peer exchange message: {}", e)))?;
+        
+        // Отправляем через QUIC
+        let (mut send, _recv) = endpoint
+            .connect(peer.address, "localhost")
+            .map_err(|e| NetworkError::Internal(format!("Failed to connect to peer: {}", e)))?
+            .await
+            .map_err(|e| NetworkError::Internal(format!("Failed to establish QUIC connection: {}", e)))?
+            .open_bi()
+            .await
+            .map_err(|e| NetworkError::Internal(format!("Failed to open QUIC stream: {}", e)))?;
+        
+        send.write_all(&msg_bytes).await
+            .map_err(|e| NetworkError::Internal(format!("Failed to send peer exchange message: {}", e)))?;
+        send.finish().await
+            .map_err(|e| NetworkError::Internal(format!("Failed to finish QUIC stream: {}", e)))?;
+        
+        debug!("📤 Peer exchange отправлен узлу: {}", peer.name);
+        Ok(())
+    }
+    
+    /// Статическая функция для получения внешнего IP
+    async fn get_external_ip_static() -> Option<String> {
+        let client = match reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .use_rustls_tls()
+            .build() {
+            Ok(client) => client,
+            Err(_) => return None,
+        };
+        
+        let ip_services = vec![
+            "https://api.ipify.org",
+            "https://ifconfig.me", 
+            "https://icanhazip.com",
+            "https://ident.me"
+        ];
+        
+        for service in ip_services {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                client.get(service).send()
+            ).await {
+                Ok(Ok(response)) => {
+                    if response.status().is_success() {
+                        match tokio::time::timeout(
+                            std::time::Duration::from_secs(2),
+                            response.text()
+                        ).await {
+                            Ok(Ok(ip)) => {
+                                let ip = ip.trim();
+                                if ip.parse::<std::net::IpAddr>().is_ok() {
+                                    return Some(ip.to_string());
+                                }
+                            },
+                            _ => continue,
+                        }
+                    }
+                },
+                _ => continue,
+            }
+        }
+        None
+    }
+    
+    /// Пытается подключиться к узлу по адресу
+    async fn try_connect_to_node(
+        quic_endpoint: &Arc<Mutex<Option<Endpoint>>>,
+        addr: SocketAddr,
+        sender_id: &Uuid,
+        sender_name: &str,
+        tcp_port: u16,
+        quic_port: u16,
+    ) -> Result<(), NetworkError> {
+        if let Some(endpoint) = quic_endpoint.lock().await.as_ref() {
+            // Создаем discovery сообщение
+            let discovery_msg = DiscoveryMessage {
+                node_id: *sender_id,
+                node_name: sender_name.to_string(),
+                tcp_port,
+                quic_port,
+                external_ip: Self::get_external_ip_static().await,
+                routing_table: vec![],
+                known_peers: vec![],
+            };
+            
+            let msg_bytes = bincode::serialize(&discovery_msg)
+                .map_err(|e| NetworkError::Internal(format!("Failed to serialize discovery message: {}", e)))?;
+            
+            // Пытаемся подключиться через QUIC
+            match endpoint.connect(addr, "localhost") {
+                Ok(connecting) => {
+                    match connecting.await {
+                        Ok(connection) => {
+                            if let Ok((mut send, mut recv)) = connection.open_bi().await {
+                                if send.write_all(&msg_bytes).await.is_ok() && send.finish().await.is_ok() {
+                                    debug!("✅ Подключение к узлу {} установлено", addr);
+                                    
+                                    // Читаем ответ
+                                    let mut response: Vec<u8> = Vec::new();
+                                    if let Ok(_) = recv.read_to_end(1024 * 1024).await {
+                                        debug!("📥 Получен ответ от узла {}", addr);
+                                    }
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            debug!("⚠️ Не удалось установить QUIC соединение с {}: {}", addr, e);
+                        }
+                    }
+                },
+                Err(e) => {
+                    debug!("⚠️ Не удалось создать QUIC подключение к {}: {}", addr, e);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Запускает QUIC сервер для приема входящих соединений
