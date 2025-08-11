@@ -524,10 +524,11 @@ impl DiscoveryService {
                 
                 // Периодически ищем новые узлы через DHT
                 if peers.len() < 10 { // Если мало пиров, ищем активнее
-                    debug!("🔍 Активный поиск узлов через DHT...");
+                    info!("🔍 Активный поиск узлов через DHT... (пиров: {})", peers.len());
                     
                     // Активно ищем узлы через известные IP адреса
                     if let Some(external_ip) = Self::get_external_ip_static().await {
+                        info!("🌍 Наш внешний IP: {}", external_ip);
                         let known_ips = vec![
                             "193.233.127.169", // Локальный компьютер
                             "4.210.177.129",   // Codespace
@@ -537,13 +538,15 @@ impl DiscoveryService {
                             if ip != external_ip {
                                 let addr = format!("{}:{}", ip, 8081).parse::<SocketAddr>();
                                 if let Ok(socket_addr) = addr {
-                                    debug!("🔍 Пробуем подключиться к узлу: {}", socket_addr);
+                                    info!("🔍 Пробуем подключиться к узлу: {}", socket_addr);
                                     if let Err(e) = Self::try_connect_to_node(&quic_endpoint, socket_addr, &node_id, &node_name, tcp_port, quic_port).await {
-                                        debug!("⚠️ Не удалось подключиться к {}: {}", socket_addr, e);
+                                        warn!("⚠️ Не удалось подключиться к {}: {}", socket_addr, e);
                                     }
                                 }
                             }
                         }
+                    } else {
+                        warn!("⚠️ Не удалось определить внешний IP для активного поиска");
                     }
                 }
             }
@@ -832,6 +835,8 @@ impl DiscoveryService {
         quic_port: u16,
     ) -> Result<(), NetworkError> {
         if let Some(endpoint) = quic_endpoint.lock().await.as_ref() {
+            info!("🚀 Пытаемся подключиться к узлу {} через QUIC", addr);
+            
             // Создаем discovery сообщение
             let discovery_msg = DiscoveryMessage {
                 node_id: *sender_id,
@@ -846,32 +851,39 @@ impl DiscoveryService {
             let msg_bytes = bincode::serialize(&discovery_msg)
                 .map_err(|e| NetworkError::Internal(format!("Failed to serialize discovery message: {}", e)))?;
             
+            info!("📤 Отправляем discovery сообщение размером {} байт", msg_bytes.len());
+            
             // Пытаемся подключиться через QUIC
             match endpoint.connect(addr, "localhost") {
                 Ok(connecting) => {
+                    info!("🔄 QUIC подключение инициировано к {}", addr);
                     match connecting.await {
                         Ok(connection) => {
+                            info!("✅ QUIC соединение установлено с {}", addr);
                             if let Ok((mut send, mut recv)) = connection.open_bi().await {
+                                info!("📡 QUIC stream открыт, отправляем сообщение");
                                 if send.write_all(&msg_bytes).await.is_ok() && send.finish().await.is_ok() {
-                                    debug!("✅ Подключение к узлу {} установлено", addr);
+                                    info!("✅ Discovery сообщение отправлено узлу {}", addr);
                                     
                                     // Читаем ответ
                                     let mut response: Vec<u8> = Vec::new();
                                     if let Ok(_) = recv.read_to_end(1024 * 1024).await {
-                                        debug!("📥 Получен ответ от узла {}", addr);
+                                        info!("📥 Получен ответ от узла {} размером {} байт", addr, response.len());
                                     }
                                 }
                             }
                         },
                         Err(e) => {
-                            debug!("⚠️ Не удалось установить QUIC соединение с {}: {}", addr, e);
+                            warn!("⚠️ Не удалось установить QUIC соединение с {}: {}", addr, e);
                         }
                     }
                 },
                 Err(e) => {
-                    debug!("⚠️ Не удалось создать QUIC подключение к {}: {}", addr, e);
+                    warn!("⚠️ Не удалось создать QUIC подключение к {}: {}", addr, e);
                 }
             }
+        } else {
+            warn!("⚠️ QUIC endpoint не доступен для подключения к {}", addr);
         }
         Ok(())
     }
