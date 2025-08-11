@@ -1,32 +1,31 @@
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, RwLock};
 use tokio::time::sleep;
 use uuid::Uuid;
-use log::{info, error, warn};
+use log::{info, error};
 
 // Импортируем наши модули
 use triad::network::{
-    Network, NetworkError, NetworkEvent, MessageType, 
-    types::PeerInfo, discovery::DiscoveryService, transport::TransportService
+    Network, NetworkError, MessageType, 
+    types::{PeerInfo, Message}, MessageHandler
 };
 
 #[derive(Debug)]
 pub struct TestnetNode {
-    pub network: Network,
+    pub network: Arc<Network>,
     pub discovery_port: u16,
     pub tcp_port: u16,
 }
 
 impl TestnetNode {
-    pub fn new(discovery_port: u16, tcp_port: u16) -> Result<Self, NetworkError> {
+    pub async fn new(discovery_port: u16, tcp_port: u16) -> Result<Self, NetworkError> {
         let node_name = format!("testnet-node-{}", Uuid::new_v4().to_string()[..8].to_string());
         
         // Создаем основную сеть с discovery и transport сервисами
         let network = Network::new(node_name, tcp_port).await?;
         
         Ok(Self {
-            network,
+            network: Arc::new(network),
             discovery_port,
             tcp_port,
         })
@@ -41,18 +40,25 @@ impl TestnetNode {
         
         // 1. Запускаем основную сеть (включает discovery и transport сервисы)
         println!("   🔧 Запуск сетевых сервисов...");
-        self.network.start().await?;
+        // Получаем mutable reference для запуска
+        let network_ref = Arc::get_mut(&mut self.network)
+            .ok_or_else(|| NetworkError::Internal("Cannot get mutable reference to network".to_string()))?;
+        network_ref.start().await?;
         println!("   ✅ Сетевые сервисы запущены");
         
         // 2. Запускаем event loop для обработки сетевых событий
         println!("   🔄 Запуск event loop...");
-        let event_sender = self.network.event_sender.clone();
+        let network_clone = self.network.clone();
         
         // Запускаем event loop в отдельной задаче
         tokio::spawn(async move {
-            let handler = TestnetMessageHandler;
-            if let Err(e) = handler.run_event_loop(event_sender).await {
-                error!("Event loop error: {}", e);
+            let mut network_clone = network_clone;
+            let handler = TestnetMessageHandler::new(network_clone.node_id());
+            // Получаем mutable reference для event loop
+            if let Some(network_mut) = Arc::get_mut(&mut network_clone) {
+                if let Err(e) = network_mut.run_event_loop(handler).await {
+                    error!("Event loop error: {}", e);
+                }
             }
         });
         
@@ -108,7 +114,9 @@ impl TestnetNode {
         println!("\n🛑 Остановка тестнета...");
         
         // Останавливаем основную сеть
-        self.network.stop().await?;
+        if let Some(network_mut) = Arc::get_mut(&mut self.network) {
+            network_mut.stop().await?;
+        }
         
         println!("✅ Тестнет остановлен");
         Ok(())
@@ -116,24 +124,33 @@ impl TestnetNode {
 }
 
 /// Обработчик сообщений для тестнета
-struct TestnetMessageHandler;
+pub struct TestnetMessageHandler {
+    node_id: Uuid,
+}
 
-impl triad::network::MessageHandler for TestnetMessageHandler {
-    async fn handle_message(&self, event: NetworkEvent) -> Result<(), NetworkError> {
-        match event {
-            NetworkEvent::MessageReceived { from, message } => {
-                info!("📥 Получено сообщение от {}: {:?}", from, message.message_type);
-                Ok(())
-            }
-            NetworkEvent::PeerConnected(peer) => {
-                info!("🔗 Подключен новый пир: {} ({})", peer.name, peer.address);
-                Ok(())
-            }
-            NetworkEvent::PeerDisconnected(peer_id) => {
-                info!("🔌 Отключен пир: {}", peer_id);
-                Ok(())
-            }
-        }
+impl TestnetMessageHandler {
+    pub fn new(node_id: Uuid) -> Self {
+        Self { node_id }
+    }
+}
+
+#[async_trait::async_trait]
+impl MessageHandler for TestnetMessageHandler {
+    async fn handle_message(&mut self, from: Uuid, message: Message) -> Result<(), NetworkError> {
+        info!("📥 Узел {} получил сообщение от {}: тип={:?}, id={}", 
+              self.node_id, from, message.message_type, message.id);
+        Ok(())
+    }
+    
+    async fn handle_peer_connected(&mut self, peer_info: PeerInfo) -> Result<(), NetworkError> {
+        info!("🔗 Узел {} обнаружил новый узел: {} ({})", 
+              self.node_id, peer_info.name, peer_info.id);
+        Ok(())
+    }
+    
+    async fn handle_peer_disconnected(&mut self, peer_id: Uuid) -> Result<(), NetworkError> {
+        info!("🔌 Узел {} потерял соединение с узлом {}", self.node_id, peer_id);
+        Ok(())
     }
 }
 
@@ -151,7 +168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tcp_port = 8080;        // TCP порт для соединений
     
     // Создаем узел тестнета
-    let mut node = TestnetNode::new(discovery_port, tcp_port)?;
+    let mut node = TestnetNode::new(discovery_port, tcp_port).await?;
     
     // Инициализируем тестнет
     if let Err(e) = node.initialize_testnet().await {
@@ -161,22 +178,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("\n🎯 Тестнет готов! Нажмите Ctrl+C для остановки...");
     println!("   🌐 Для подключения других узлов запустите на других компьютерах:");
-    println!("      cargo run --example demo_work");
+    println!("      cargo run --example Testnet");
     
     // Периодически отправляем тестовые сообщения
-    let node_ref = &node;
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(30));
-        loop {
-            interval.tick().await;
-            if let Err(e) = node_ref.send_test_message().await {
-                eprintln!("⚠️  Ошибка отправки тестового сообщения: {}", e);
+    let mut interval = tokio::time::interval(Duration::from_secs(30));
+    
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                if let Err(e) = node.send_test_message().await {
+                    eprintln!("⚠️  Ошибка отправки тестового сообщения: {}", e);
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                break;
             }
         }
-    });
-    
-    // Ждем сигнала остановки
-    tokio::signal::ctrl_c().await?;
+    }
     
     // Останавливаем тестнет
     if let Err(e) = node.shutdown().await {
