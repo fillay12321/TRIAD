@@ -59,7 +59,9 @@ rocksdb = "0.21"
 
 # High-throughput enhancements
 blsful = "3.0.0-pre8"  # For aggregated signatures
-quinn = "0.11.3"  # For fast network transport (QUIC)
+quinn = "0.10"  # For fast network transport (QUIC) - compatible with rustls 0.20
+rustls = "0.21"  # For QUIC TLS compatibility with quinn 0.10
+rcgen = "0.11"  # For certificate generation compatibility
 
 # Innovation enhancements
 tensorflow = "0.21.0"  # For ML in semantic/error

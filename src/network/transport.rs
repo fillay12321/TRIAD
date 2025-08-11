@@ -237,7 +237,7 @@ impl TransportService {
         let conn = endpoint.connect(server_addr, "localhost").unwrap().await.unwrap();
         let mut stream = conn.open_uni().await.unwrap();
         stream.write_all(&data).await.unwrap();
-        stream.finish().unwrap();
+        stream.finish().await.unwrap();
     }
     
     /// Обрабатывает входящее соединение
