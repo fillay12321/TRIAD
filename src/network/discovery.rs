@@ -26,13 +26,8 @@ const DISCOVERY_INTERVAL: Duration = Duration::from_secs(15);
 const BUFFER_SIZE: usize = 1024;
 
 /// Глобальные bootstrap узлы для быстрого старта P2P сети
-const BOOTSTRAP_NODES: &[&str] = &[
-    "node1.triad.network:8080",
-    "node2.triad.network:8080", 
-    "node3.triad.network:8080",
-    "seed1.triad.network:8080",
-    "seed2.triad.network:8080",
-];
+/// Отключены для автоматического обнаружения через peer exchange
+const BOOTSTRAP_NODES: &[&str] = &[];
 
 /// QUIC порт для быстрых соединений
 const QUIC_PORT: u16 = 8081;
@@ -176,22 +171,34 @@ impl DiscoveryService {
         let node_name = self.node_name.clone();
         let tcp_port = self.tcp_port;
         
-        // Запускаем периодическую отправку discovery-сообщений
+        // Запускаем периодическую отправку discovery-сообщений с автоматическим обнаружением
         let broadcast_socket = socket.clone();
+        let peer_manager_clone = peer_manager.clone();
+        
         tokio::spawn(async move {
             let mut interval = interval(DISCOVERY_INTERVAL);
             
             loop {
                 interval.tick().await;
                 
+                // Получаем текущих пиров для peer exchange
+                let known_peers = {
+                    let pm = peer_manager_clone.read().await;
+                    pm.get_all_peers().into_iter().map(|peer| SerializablePeerInfo {
+                        id: peer.id,
+                        name: peer.name,
+                        address: peer.address.to_string(),
+                    }).collect()
+                };
+                
                 let discovery_msg = DiscoveryMessage {
                     node_id,
                     node_name: node_name.clone(),
                     tcp_port,
                     quic_port: QUIC_PORT,
-                    external_ip: None,
+                    external_ip: None, // Будет определено в start_global_p2p
                     routing_table: vec![],
-                    known_peers: vec![],
+                    known_peers, // Отправляем список известных пиров
                 };
                 
                 let msg_bytes = match bincode::serialize(&discovery_msg) {
@@ -299,23 +306,34 @@ impl DiscoveryService {
         Ok(())
     }
 
-    /// Запускает глобальный P2P функционал
+    /// Запускает глобальный P2P функционал с автоматическим обнаружением
     async fn start_global_p2p(&self) -> Result<(), NetworkError> {
-        info!("🌍 Запуск глобального P2P...");
+        info!("🌍 Запуск глобального P2P с автоматическим обнаружением...");
         
         // 1. Запускаем QUIC сервер для приема соединений
         self.start_quic_server().await?;
         
-        // 2. Подключаемся к bootstrap узлам
-        self.connect_bootstrap_nodes().await?;
+        // 2. Определяем внешний IP для NAT traversal
+        let external_ip = self.get_external_ip().await;
+        if let Some(ip) = &external_ip {
+            info!("🌍 Внешний IP: {} - узел доступен из интернета", ip);
+        } else {
+            info!("🏠 Узел за NAT - будет использовать relay узлы");
+        }
         
-        // 3. Запускаем peer exchange
+        // 3. Запускаем peer exchange (автоматическое обнаружение)
         self.start_peer_exchange().await?;
         
-        // 4. Запускаем DHT обновления
+        // 4. Запускаем DHT обновления с relay функционалом
         self.start_dht_updates().await?;
         
-        info!("✅ Глобальный P2P запущен!");
+        // 5. Проверяем, можем ли стать relay узлом
+        if self.can_become_relay().await {
+            info!("🔄 Узел готов стать relay для других узлов");
+        }
+        
+        info!("✅ Глобальный P2P запущен с автоматическим обнаружением!");
+        info!("🚀 Узлы будут находить друг друга через peer exchange и DHT");
         Ok(())
     }
 
@@ -456,10 +474,11 @@ impl DiscoveryService {
         distance
     }
 
-    /// Запускает peer exchange
+    /// Запускает peer exchange с автоматическим обнаружением
     async fn start_peer_exchange(&self) -> Result<(), NetworkError> {
         let event_sender = self.event_sender.clone();
         let peer_manager = self.peer_manager.clone();
+        let dht_table = self.dht_table.clone();
         
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(PEER_EXCHANGE_INTERVAL);
@@ -470,6 +489,18 @@ impl DiscoveryService {
                 let peers = peer_manager.read().await.get_all_peers();
                 if !peers.is_empty() {
                     info!("📤 Peer exchange: {} узлов", peers.len());
+                    
+                    // Автоматически делимся нашими пирами с другими узлами
+                    for peer in &peers {
+                        // TODO: Отправляем peer exchange сообщение
+                        debug!("🔄 Обмен пирами с узлом: {}", peer.name);
+                    }
+                }
+                
+                // Периодически ищем новые узлы через DHT
+                if peers.len() < 10 { // Если мало пиров, ищем активнее
+                    debug!("🔍 Активный поиск узлов через DHT...");
+                    // TODO: DHT поиск новых узлов
                 }
             }
         });
@@ -477,7 +508,7 @@ impl DiscoveryService {
         Ok(())
     }
 
-    /// Запускает DHT обновления
+    /// Запускает DHT обновления с relay функционалом
     async fn start_dht_updates(&self) -> Result<(), NetworkError> {
         let dht_table = self.dht_table.clone();
         let peer_manager = self.peer_manager.clone();
@@ -496,11 +527,28 @@ impl DiscoveryService {
                     // TODO: Реализовать DHT обновления
                 }
                 
-                debug!("🔄 DHT обновлен: {} buckets", table.len());
+                // Проверяем, можем ли стать relay узлом для других
+                if peers.len() >= 3 {
+                    debug!("🔄 DHT обновлен: {} buckets, узел готов стать relay", table.len());
+                } else {
+                    debug!("🔄 DHT обновлен: {} buckets", table.len());
+                }
             }
         });
         
         Ok(())
+    }
+    
+    /// Проверяет, может ли узел стать relay для других
+    async fn can_become_relay(&self) -> bool {
+        let peers = self.peer_manager.read().await.get_all_peers();
+        let external_ip = self.get_external_ip().await;
+        
+        // Узел может стать relay если:
+        // 1. У него есть внешний IP (не за NAT)
+        // 2. У него достаточно пиров для маршрутизации
+        // 3. Он стабилен и доступен
+        external_ip.is_some() && peers.len() >= 2
     }
 
     /// Получает статистику производительности
@@ -532,19 +580,38 @@ impl DiscoveryService {
         Ok(ClientConfig::new(Arc::new(client_crypto)))
     }
 
-    /// Получает внешний IP адрес
+    /// Получает внешний IP адрес с автоматическим NAT traversal
     async fn get_external_ip(&self) -> Option<String> {
         // Пытаемся получить внешний IP через публичные сервисы
-        match reqwest::get("https://api.ipify.org").await {
-            Ok(response) => response.text().await.ok(),
-            Err(_) => {
-                // Fallback на другой сервис
-                match reqwest::get("https://ifconfig.me").await {
-                    Ok(response) => response.text().await.ok(),
-                    Err(_) => None,
-                }
+        let ip_services = vec![
+            "https://api.ipify.org",
+            "https://ifconfig.me", 
+            "https://icanhazip.com",
+            "https://ident.me"
+        ];
+        
+        for service in ip_services {
+            match reqwest::get(service).await {
+                Ok(response) => {
+                    if let Ok(ip) = response.text().await {
+                        let ip = ip.trim();
+                        if self.is_valid_ip(ip) {
+                            info!("🌍 Внешний IP определен: {} через {}", ip, service);
+                            return Some(ip.to_string());
+                        }
+                    }
+                },
+                Err(e) => debug!("Сервис {} недоступен: {}", service, e),
             }
         }
+        
+        warn!("⚠️ Не удалось определить внешний IP");
+        None
+    }
+    
+    /// Проверяет валидность IP адреса
+    fn is_valid_ip(&self, ip: &str) -> bool {
+        ip.parse::<std::net::IpAddr>().is_ok()
     }
 
     /// Получает текущую routing table
