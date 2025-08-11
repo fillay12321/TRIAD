@@ -1,15 +1,18 @@
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
+use std::collections::HashMap;
 use tokio::net::UdpSocket;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, RwLock, Mutex};
 use tokio::time::{sleep, interval};
 use uuid::Uuid;
 use log::{debug, error, info, warn};
 use local_ip_address::local_ip;
 use serde::{Deserialize, Serialize};
+use quinn::{Endpoint, ServerConfig, ClientConfig};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::network::types::{PeerInfo, NetworkEvent};
+use crate::network::types::{PeerInfo, NetworkEvent, SerializablePeerInfo};
 use crate::network::peer::PeerManager;
 use crate::network::MessageType;
 use crate::network::NetworkError;
@@ -21,6 +24,24 @@ const DISCOVERY_INTERVAL: Duration = Duration::from_secs(15);
 /// Размер буфера для приёма сообщений
 const BUFFER_SIZE: usize = 1024;
 
+/// Глобальные bootstrap узлы для быстрого старта P2P сети
+const BOOTSTRAP_NODES: &[&str] = &[
+    "node1.triad.network:8080",
+    "node2.triad.network:8080", 
+    "node3.triad.network:8080",
+    "seed1.triad.network:8080",
+    "seed2.triad.network:8080",
+];
+
+/// QUIC порт для быстрых соединений
+const QUIC_PORT: u16 = 8081;
+
+/// DHT bucket size для Kademlia
+const DHT_BUCKET_SIZE: usize = 20;
+
+/// Peer exchange интервал
+const PEER_EXCHANGE_INTERVAL: Duration = Duration::from_secs(30);
+
 /// Сообщение обнаружения узлов
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DiscoveryMessage {
@@ -30,9 +51,34 @@ struct DiscoveryMessage {
     node_name: String,
     /// Порт, на котором узел принимает TCP-соединения
     tcp_port: u16,
+    /// QUIC порт для быстрых соединений
+    quic_port: u16,
+    /// Внешний IP адрес (для NAT traversal)
+    external_ip: Option<String>,
+    /// DHT routing table
+    routing_table: Vec<SerializablePeerInfo>,
+    /// Peer exchange список
+    known_peers: Vec<SerializablePeerInfo>,
 }
 
-/// Сервис обнаружения узлов в локальной сети
+/// DHT Kademlia routing table entry
+#[derive(Debug, Clone)]
+struct DHTEntry {
+    node_id: Uuid,
+    address: SocketAddr,
+    last_seen: std::time::Instant,
+    distance: u64,
+}
+
+/// Peer exchange сообщение
+#[derive(Debug, Clone)]
+struct PeerExchangeMessage {
+    sender_id: Uuid,
+    peers: Vec<SerializablePeerInfo>,
+    timestamp: u64, // Unix timestamp вместо Instant
+}
+
+/// Сервис обнаружения узлов в глобальной P2P сети
 #[derive(Debug)]
 pub struct DiscoveryService {
     /// ID текущего узла
@@ -41,10 +87,20 @@ pub struct DiscoveryService {
     node_name: String,
     /// Порт для TCP-соединений
     tcp_port: u16,
+    /// QUIC порт для быстрых соединений
+    quic_port: u16,
     /// Канал для отправки событий сети
     event_sender: mpsc::Sender<NetworkEvent>,
     /// Менеджер узлов
     peer_manager: Arc<RwLock<PeerManager>>,
+    /// DHT routing table для Kademlia
+    dht_table: Arc<Mutex<HashMap<u64, Vec<DHTEntry>>>>,
+    /// QUIC endpoint для быстрых соединений
+    quic_endpoint: Arc<Mutex<Option<Endpoint>>>,
+    /// Peer exchange кэш
+    peer_exchange_cache: Arc<Mutex<HashMap<Uuid, Vec<SerializablePeerInfo>>>>,
+    /// Статистика производительности
+    performance_stats: Arc<AtomicU64>,
     /// Флаг, указывающий, запущен ли сервис
     running: bool,
 }
@@ -62,8 +118,13 @@ impl DiscoveryService {
             node_id,
             node_name,
             tcp_port,
+            quic_port: QUIC_PORT,
             event_sender,
             peer_manager,
+            dht_table: Arc::new(Mutex::new(HashMap::new())),
+            quic_endpoint: Arc::new(Mutex::new(None)),
+            peer_exchange_cache: Arc::new(Mutex::new(HashMap::new())),
+            performance_stats: Arc::new(AtomicU64::new(0)),
             running: false,
         }
     }
@@ -126,6 +187,10 @@ impl DiscoveryService {
                     node_id,
                     node_name: node_name.clone(),
                     tcp_port,
+                    quic_port: QUIC_PORT,
+                    external_ip: None,
+                    routing_table: vec![],
+                    known_peers: vec![],
                 };
                 
                 let msg_bytes = match bincode::serialize(&discovery_msg) {

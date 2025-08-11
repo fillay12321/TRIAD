@@ -64,20 +64,26 @@ impl TestnetNode {
         
         println!("   ✅ Event loop запущен");
         
-        // 3. Даем время на обнаружение других узлов
+        // 3. Запускаем мониторинг узлов в реальном времени
         println!("   🔍 Поиск других узлов в тестнете...");
-        sleep(Duration::from_secs(5)).await;
+        println!("   📡 Discovery активен - узлы будут обнаружены автоматически");
         
-        // 4. Показываем статус тестнета
+        // 4. Показываем начальный статус
         let peers = self.network.get_peers().await;
-        println!("   📊 Статус тестнета:");
+        println!("   📊 Начальный статус тестнета:");
         println!("      🌐 Локальный узел: {} (порт {})", 
                 self.network.node_name(), self.tcp_port);
         println!("      🔗 Обнаружено пиров: {}", peers.len());
-        for peer in &peers {
-            println!("         - {}: {} (последний раз: {:.1}s назад)", 
-                    peer.name, peer.address, 
-                    peer.last_seen.elapsed().as_secs_f64());
+        
+        if peers.is_empty() {
+            println!("      💡 Ожидание подключения других узлов...");
+            println!("      🌐 Запустите на других компьютерах: cargo run --example Testnet");
+        } else {
+            for peer in &peers {
+                println!("         - {}: {} (последний раз: {:.1}s назад)", 
+                        peer.name, peer.address, 
+                        peer.last_seen.elapsed().as_secs_f64());
+            }
         }
         
         println!("🎉 Тестнет инициализирован! {} узлов готовы к работе", 1 + peers.len());
@@ -180,14 +186,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   🌐 Для подключения других узлов запустите на других компьютерах:");
     println!("      cargo run --example Testnet");
     
-    // Периодически отправляем тестовые сообщения
-    let mut interval = tokio::time::interval(Duration::from_secs(30));
+    // Периодически отправляем тестовые сообщения и показываем статус
+    let mut message_interval = tokio::time::interval(Duration::from_secs(30));
+    let mut status_interval = tokio::time::interval(Duration::from_secs(10));
     
     loop {
         tokio::select! {
-            _ = interval.tick() => {
+            _ = message_interval.tick() => {
                 if let Err(e) = node.send_test_message().await {
                     eprintln!("⚠️  Ошибка отправки тестового сообщения: {}", e);
+                }
+            }
+            _ = status_interval.tick() => {
+                // Показываем текущий статус сети
+                let peers = node.network.get_peers().await;
+                if peers.is_empty() {
+                    println!("   🔍 Поиск узлов... (найдено: 0)");
+                } else {
+                    println!("   📊 Сеть: {} узлов активны", peers.len() + 1);
+                    for peer in &peers {
+                        let last_seen = peer.last_seen.elapsed().as_secs_f64();
+                        if last_seen < 60.0 {
+                            println!("      ✅ {}: {} (активен {:.1}s)", 
+                                    peer.name, peer.address, last_seen);
+                        } else {
+                            println!("      ⚠️  {}: {} (неактивен {:.1}s)", 
+                                    peer.name, peer.address, last_seen);
+                        }
+                    }
                 }
             }
             _ = tokio::signal::ctrl_c() => {
