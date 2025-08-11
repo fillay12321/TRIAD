@@ -7,6 +7,7 @@ pub mod semantic;
 pub mod transaction;
 pub mod token;
 pub mod dag;
+pub mod github;
 
 pub use quantum::field::QuantumField;
 pub use transaction::{Transaction, TransactionProcessor, TransactionStorage};

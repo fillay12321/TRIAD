@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_interference() {
-        let engine = InterferenceEngine::new(100, 0.95);
+        let engine = InterferenceEngine::new(1000, 0.95);
         
         let states = vec![
             QuantumState {
@@ -262,7 +262,7 @@ mod tests {
     fn test_export_interference_pattern_to_csv() {
         use crate::quantum::interference::InterferenceEngine;
         use crate::quantum::field::QuantumState;
-        let engine = InterferenceEngine::new(200, 0.98);
+        let engine = InterferenceEngine::new(1000, 0.98);
         let states = vec![
             QuantumState {
                 amplitude: 1.0,

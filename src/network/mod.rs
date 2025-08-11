@@ -9,8 +9,9 @@ mod error;
 mod peer;
 mod handler;
 mod quantum_handler;
-mod http_server;
-mod http_client;
+// HTTP server removed - using WebSocket only
+pub mod websocket_server;
+pub mod websocket_client;
 pub mod real_node;
 
 pub use error::NetworkError;

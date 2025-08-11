@@ -3,6 +3,9 @@ pub mod interference;
 pub mod prob_ops;
 pub mod consensus;
 
+#[cfg(feature = "opencl")]
+pub mod opencl;
+
 pub use field::{QuantumField, QuantumState, StateVector, InterferencePoint, QuantumWave};
 pub use interference::{InterferenceEngine, InterferenceAnalysis};
 pub use prob_ops::{ProbabilisticOperation, OperationOutcome};

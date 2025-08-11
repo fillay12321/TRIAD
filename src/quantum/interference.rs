@@ -2,7 +2,7 @@ use serde::{Serialize, Deserialize};
 use serde::ser::SerializeStruct;
 use serde::de::{Deserializer, Visitor};
 use std::fmt;
-use crate::quantum::field::{QuantumState, InterferencePoint};
+use crate::quantum::field::{QuantumState, InterferencePoint, QuantumField};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -47,12 +47,32 @@ impl QuantumInterferenceAccelerator for CudaAccelerator {
 }
 
 #[cfg(feature = "opencl")]
-pub struct OpenClAccelerator;
+pub struct OpenClAccelerator {
+    engine: crate::quantum::opencl::OpenClInterferenceEngine,
+}
+
+#[cfg(feature = "opencl")]
+impl OpenClAccelerator {
+    pub fn new() -> Result<Self, String> {
+        match crate::quantum::opencl::OpenClInterferenceEngine::new() {
+            Ok(engine) => Ok(Self { engine }),
+            Err(e) => Err(format!("Failed to initialize OpenCL engine: {}", e)),
+        }
+    }
+}
+
 #[cfg(feature = "opencl")]
 impl QuantumInterferenceAccelerator for OpenClAccelerator {
     fn calculate(&self, states: &[QuantumState], resolution: usize) -> Vec<InterferencePoint> {
-        // OpenCL kernel launch (stub, kernel implementation required)
-        vec![InterferencePoint { position: 0.0, amplitude: 0.0, phase: 0.0 }; resolution]
+        match self.engine.calculate_interference_optimized(states, resolution) {
+            Ok(points) => points,
+            Err(e) => {
+                eprintln!("OpenCL calculation failed: {}, falling back to CPU", e);
+                // Fallback to CPU
+                let cpu_acc = CpuAccelerator;
+                cpu_acc.calculate(states, resolution)
+            }
+        }
     }
 }
 
@@ -62,15 +82,19 @@ pub struct InterferenceEngine {
     pub threshold: f64,
     pub decay_factor: f64,
     cache: Arc<RwLock<HashMap<String, Vec<InterferencePoint>>>>,
+    // Reusable buffer to avoid per-call allocations
+    state_buffer: Vec<QuantumState>,
 }
 
 impl InterferenceEngine {
     pub fn new(resolution: usize, decay_factor: f64) -> Self {
         Self {
-            resolution: resolution.min(100), // Limit resolution
+            // Разрешение до 10_000 точек (соответствует pitch "High-resolution patterns")
+            resolution: resolution.min(10_000),
             threshold: 0.95,
             decay_factor,
             cache: Arc::new(RwLock::new(HashMap::new())),
+            state_buffer: Vec::new(),
         }
     }
 
@@ -85,15 +109,6 @@ impl InterferenceEngine {
 
         let step = 1.0 / self.resolution as f64;
         
-        // Pre-calculate phases and amplitudes
-        let phases: Vec<f64> = states.iter()
-            .map(|state| state.phase)
-            .collect();
-        
-        let amplitudes: Vec<f64> = states.iter()
-            .map(|state| state.amplitude)
-            .collect();
-
         // Parallel interference point calculation
         let pattern: Vec<InterferencePoint> = (0..self.resolution)
             .into_par_iter()
@@ -102,15 +117,15 @@ impl InterferenceEngine {
                 let mut total_amplitude = 0.0;
                 let mut total_phase = 0.0;
                 
-                // Use pre-calculated values
-                for (amplitude, phase) in amplitudes.iter().zip(phases.iter()) {
-                    let contribution = self.calculate_state_contribution_fast(*amplitude, *phase, x);
+                // Прямой проход по состояниям без промежуточных векторов
+                for state in states {
+                    let contribution = self.calculate_state_contribution_fast(state.amplitude, state.phase, x);
                     total_amplitude += contribution.0;
                     total_phase += contribution.1;
                 }
                 
-                // Apply decay (optimized version)
-                total_amplitude *= self.decay_factor.powi((x * 10.0) as i32);
+                // Экспоненциальное затухание (стабильно и быстро)
+                total_amplitude *= (-x * self.decay_factor).exp();
                 
                 InterferencePoint {
                     position: x,
@@ -126,6 +141,20 @@ impl InterferenceEngine {
         }
         
         pattern
+    }
+
+    /// Fills an internal buffer from the given QuantumField and runs one interference calculation
+    /// Reuses the buffer to avoid O(n) allocations on every call
+    pub fn calculate_interference_from_field(&mut self, field: &QuantumField) -> Vec<InterferencePoint> {
+        // Prepare buffer
+        self.state_buffer.clear();
+        self.state_buffer.reserve(field.active_waves.len());
+        // Map waves to states, избегая избыточного clone() на самой волне
+        for wave in field.active_waves.values() {
+            self.state_buffer.push(QuantumState::from(wave));
+        }
+        // Run calculation with the reusable buffer
+        self.calculate_interference_pattern(&self.state_buffer)
     }
     
     fn calculate_state_contribution_fast(&self, amplitude: f64, phase: f64, x: f64) -> (f64, f64) {
@@ -163,9 +192,9 @@ impl InterferenceEngine {
                     let new_min = min.min(amplitude);
                     let new_sum = sum + amplitude;
                     
-                    if amplitude > 0.5 {
+                    if amplitude > 0.01 {
                         constr.push(point.clone());
-                    } else if amplitude < -0.5 {
+                    } else if amplitude < -0.01 {
                         destr.push(point.clone());
                     }
                     
@@ -211,10 +240,18 @@ impl InterferenceEngine {
         }
         #[cfg(all(not(feature = "cuda"), feature = "opencl"))]
         {
-            let acc = OpenClAccelerator;
-            return acc.calculate(states, self.resolution);
+            match OpenClAccelerator::new() {
+                Ok(acc) => {
+                    println!("🚀 Using OpenCL acceleration");
+                    return acc.calculate(states, self.resolution);
+                }
+                Err(e) => {
+                    println!("⚠️  OpenCL initialization failed: {}, falling back to CPU", e);
+                }
+            }
         }
         // Fallback on CPU
+        println!("💻 Using CPU fallback");
         let acc = CpuAccelerator;
         acc.calculate(states, self.resolution)
     }
@@ -227,6 +264,13 @@ pub struct InterferenceAnalysis {
     pub average_amplitude: f64,
     pub constructive_points: Vec<InterferencePoint>,
     pub destructive_points: Vec<InterferencePoint>,
+}
+
+impl InterferenceAnalysis {
+    /// Возвращает общее количество точек в паттерне
+    pub fn total_points(&self) -> usize {
+        self.constructive_points.len() + self.destructive_points.len()
+    }
 }
 
 #[derive(Debug, Clone)]

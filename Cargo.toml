@@ -71,6 +71,9 @@ cust = { version = "0.3.2", optional = true }  # CUDA
 ocl = { version = "0.19", optional = true }  # OpenCL
 smartcore = { version = "0.3.2", features = ["serde"] }  # ML для динамического шардинга
 
+# WebSocket support
+tokio-tungstenite = "0.20"
+
 [features]
 default = []
 cuda = ["cust"]
@@ -127,6 +130,10 @@ path = "examples/error_analysis_demo.rs"
 [[example]]
 name = "semantic_analysis_demo"
 path = "examples/semantic_analysis_demo.rs"
+
+[[example]]
+name = "quantum_consensus_demo"
+path = "examples/quantum_consensus_demo.rs"
 
 [[example]]
 name = "chat"

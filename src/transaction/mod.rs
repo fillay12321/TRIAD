@@ -55,7 +55,14 @@ impl Transaction {
 /// Трейт для обработки транзакций
 pub trait TransactionProcessor {
     fn process(&self, transaction: &mut Transaction) -> Result<(), String>;
+    fn process_batch(&self, transactions: &mut [Transaction]) -> Result<(), String>;
     fn verify(&self, transaction: &Transaction) -> bool;
+    fn create_wave_from_transaction(&self, transaction: &Transaction) -> crate::quantum::field::QuantumWave;
+    fn create_probabilistic_decision(&self, analysis: &crate::quantum::interference::InterferenceAnalysis, transactions: &[Transaction]) -> crate::quantum::prob_ops::ProbabilisticOperation;
+    fn calculate_transaction_quality(&self, transactions: &[Transaction]) -> f64;
+    fn calculate_ttl_factor(&self) -> f64;
+    fn calculate_sender_reputation(&self, transactions: &[Transaction]) -> f64;
+    fn create_verification_decision(&self, analysis: &crate::quantum::interference::InterferenceAnalysis, transaction: &Transaction) -> crate::quantum::prob_ops::ProbabilisticOperation;
 }
 
 /// Трейт для хранения транзакций
