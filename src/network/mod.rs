@@ -15,7 +15,7 @@ pub mod websocket_client;
 pub mod real_node;
 
 pub use error::NetworkError;
-pub use discovery::DiscoveryService;
+pub use discovery::LibP2PDiscoveryService;
 pub use transport::TransportService;
 pub use message::MessageService;
 pub use peer::PeerManager;
@@ -36,14 +36,13 @@ use serde::{Serialize, Deserialize};
 use crate::network::types::{PeerInfo, NetworkEvent};
 
 /// Main class of the network module
-#[derive(Debug)]
 pub struct Network {
     /// Unique node identifier
     node_id: Uuid,
     /// Node name
     node_name: String,
     /// Node discovery service
-    discovery: Arc<DiscoveryService>,
+    discovery: Arc<LibP2PDiscoveryService>,
     /// Message transport service
     transport: Arc<TransportService>,
     /// Message processing service
@@ -54,11 +53,13 @@ pub struct Network {
     event_receiver: mpsc::Receiver<NetworkEvent>,
     /// Channel for sending network events
     event_sender: mpsc::Sender<NetworkEvent>,
+    /// Message handler
+    handler: Arc<RwLock<Box<dyn MessageHandler + Send + Sync>>>,
 }
 
 impl Network {
     /// Creates a new instance of the network module
-    pub async fn new(node_name: String, port: u16) -> Result<Self, NetworkError> {
+    pub async fn new(node_name: String, port: u16, handler: Box<dyn MessageHandler + Send + Sync>) -> Result<Self, NetworkError> {
         let node_id = Uuid::new_v4();
         
         // Create channels for events
@@ -68,10 +69,9 @@ impl Network {
         let peer_manager = Arc::new(RwLock::new(PeerManager::new()));
         
         // Create node discovery service
-        let discovery = Arc::new(DiscoveryService::new(
-            node_id,
+        let discovery = Arc::new(LibP2PDiscoveryService::new(
             node_name.clone(),
-            port,
+            8081, // QUIC port
             event_sender.clone(),
             peer_manager.clone(),
         ));
@@ -100,13 +100,17 @@ impl Network {
             peer_manager,
             event_receiver,
             event_sender,
+            handler: Arc::new(RwLock::new(handler)),
         })
     }
     
     /// Starts the network module
     pub async fn start(&mut self) -> Result<(), NetworkError> {
         // Start discovery service
-        self.discovery.start().await?;
+        info!("🚀 Starting discovery service...");
+        let discovery_clone = Arc::clone(&self.discovery);
+        tokio::spawn(discovery_clone.start());
+        info!("🚀 Discovery service ready");
         
         // Start transport service
         self.transport.start().await?;
@@ -117,9 +121,13 @@ impl Network {
     }
     
     /// Stops the network module
-    pub async fn stop(&self) -> Result<(), NetworkError> {
-        // Stop services
+    pub async fn stop(&mut self) -> Result<(), NetworkError> {
+        // Stop discovery service
+        info!("🛑 Stopping discovery service...");
         self.discovery.stop().await?;
+        info!("🛑 Discovery service stopped");
+        
+        // Stop transport service
         self.transport.stop().await?;
         
         info!("Network module stopped");
@@ -143,7 +151,8 @@ impl Network {
     }
     
     /// Processes network events in an infinite loop
-    pub async fn run_event_loop(&mut self, mut handler: impl MessageHandler + 'static) -> Result<(), NetworkError> {
+    pub async fn run_event_loop(&mut self) -> Result<(), NetworkError> {
+        let mut handler = self.handler.write().await;
         info!("Starting network event loop");
         
         while let Some(event) = self.event_receiver.recv().await {

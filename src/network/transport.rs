@@ -11,7 +11,7 @@ use quinn::Endpoint;
 use crate::network::error::NetworkError;
 use crate::network::types::{Message, NetworkEvent, PeerInfo};
 use crate::network::peer::PeerManager;
-use crate::network::MessageType;
+
 
 /// Максимальный размер сообщения (10 МБ)
 const MAX_MESSAGE_SIZE: usize = 10 * 1024 * 1024;

@@ -44,6 +44,10 @@ pub enum NetworkError {
     /// Внутренняя ошибка
     #[error("Внутренняя ошибка: {0}")]
     Internal(String),
+
+    /// Ошибка остановки сервиса
+    #[error("Не удалось корректно остановить сервис")]
+    ShutdownFailed,
 }
 
 impl From<bincode::Error> for NetworkError {

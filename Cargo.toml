@@ -21,7 +21,11 @@ serde_json = "1.0"
 
 # Сетевые библиотеки
 tokio = { version = "1.28", features = ["full"] }
-libp2p = { version = "0.51.0", features = ["tcp", "noise"] }  # P2P коммуникации
+libp2p = { version = "0.51.0", features = ["tcp", "dns", "quic", "noise", "yamux", "ping", "identify", "kad", "gossipsub", "autonat", "relay", "dcutr", "macros"] }
+libp2p-tcp = { version = "0.39.0", features = ["tokio"] }
+
+# Optional WebRTC fallback (only compiled when feature `webrtc` is enabled)
+libp2p-webrtc = { version = "0.9.0-alpha.1", optional = true }
 
 # Утилиты
 log = "0.4"
@@ -63,6 +67,11 @@ quinn = "0.10"  # For fast network transport (QUIC) - compatible with rustls 0.2
 rustls = "0.21"  # For QUIC TLS compatibility with quinn 0.10
 rcgen = "0.11"  # For certificate generation compatibility
 
+# Compression libraries
+zstd = "0.12"  # For Zstandard compression
+lz4_flex = "0.9"  # For LZ4 compression
+brotli = "3.3"  # For Brotli compression
+
 # Innovation enhancements
 tensorflow = "0.21.0"  # For ML in semantic/error
 bellman = "0.13"  # For ZK-SNARKs
@@ -80,6 +89,7 @@ tokio-tungstenite = "0.20"
 default = []
 cuda = ["cust"]
 opencl = ["ocl"]
+webrtc = ["libp2p-webrtc"]
 
 [dev-dependencies]
 criterion = "0.5.1"    # Для бенчмарков

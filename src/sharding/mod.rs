@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use smartcore::tree::decision_tree_classifier::DecisionTreeClassifier;
 use smartcore::linalg::basic::matrix::DenseMatrix;
-use smartcore::numbers::realnum::RealNumber;
+
 use smartcore::tree::decision_tree_classifier::DecisionTreeClassifierParameters;
 
 pub struct Shard {

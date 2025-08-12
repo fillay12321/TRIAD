@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use uuid::Uuid;
-use crate::network::types::{Message, PeerInfo};
+use crate::network::types::{Message, PeerInfo, NetworkEvent};
 use crate::network::error::NetworkError;
 
 /// Network message handler interface
 /// Handles received message
-/// Handles new node connection
+/// Handles node connection
 /// Handles node disconnection
 #[async_trait]
 pub trait MessageHandler: Send + Sync {
@@ -14,7 +14,7 @@ pub trait MessageHandler: Send + Sync {
     
     /// Обрабатывает подключение нового узла
     async fn handle_peer_connected(&mut self, peer_info: PeerInfo) -> Result<(), NetworkError>;
-    
+
     /// Обрабатывает отключение узла
     async fn handle_peer_disconnected(&mut self, peer_id: Uuid) -> Result<(), NetworkError>;
 }

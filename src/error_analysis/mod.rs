@@ -2,14 +2,14 @@ use std::collections::HashMap;
 use std::time::{SystemTime, Duration};
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
-use log::{error, warn, info, debug};
+use log::{error, warn, info};
 use crate::transaction::{Transaction, TransactionStatus};
-use crate::quantum::field::{QuantumState, StateVector};
+use crate::quantum::field::QuantumState;
 use smartcore::ensemble::random_forest_classifier::RandomForestClassifier;
 use smartcore::ensemble::random_forest_classifier::RandomForestClassifierParameters;
 use smartcore::linalg::basic::matrix::DenseMatrix;
-use smartcore::numbers::realnum::RealNumber;
-use smartcore::metrics::accuracy;
+
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ErrorSeverity {
@@ -318,7 +318,7 @@ impl SystemErrorAnalyzer {
         for component in &analysis.impact_analysis.affected_components {
             let current_health = self.component_health.entry(component.clone())
                 .or_insert(1.0);
-            *current_health *= (1.0 - analysis.impact_analysis.reliability_impact);
+            *current_health *= 1.0 - analysis.impact_analysis.reliability_impact;
         }
 
         // Обновление общего здоровья системы

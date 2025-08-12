@@ -1,7 +1,7 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use log::{info, error, debug, warn};
+
+use log::{info, error, warn};
 use std::env;
 
 /// GitHub Codespaces API интеграция

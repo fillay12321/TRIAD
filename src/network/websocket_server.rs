@@ -1,5 +1,5 @@
 use tokio::net::{TcpListener, TcpStream};
-use tokio_tungstenite::{accept_async, WebSocketStream, MaybeTlsStream};
+use tokio_tungstenite::{accept_async, WebSocketStream};
 use futures::{SinkExt, StreamExt};
 use serde::{Serialize, Deserialize};
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use rand::Rng;
 use rayon::prelude::*;
 
-use crate::quantum::{QuantumField, InterferenceEngine, QuantumWave, QuantumState};
+use crate::quantum::{QuantumField, InterferenceEngine, QuantumWave};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WebSocketMessage {

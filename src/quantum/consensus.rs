@@ -6,9 +6,7 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use rayon::prelude::*;
 use std::collections::HashMap;
-use serde::ser::SerializeStruct;
-use serde::de::{Deserializer, Visitor};
-use std::fmt;
+
 use num_complex::Complex;
 use std::time::SystemTime;
 use serde_json;

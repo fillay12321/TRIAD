@@ -6,12 +6,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use lazy_static::lazy_static;
 use rayon::prelude::*;
-use uuid::Uuid;
+
 use num_complex::Complex;
 use super::{SmartContract, SmartContractProcessor, ContractStatus};
-use crate::sharding::ShardEvent;
+
 use blsful::{Signature, Bls12381G1Impl, SecretKey, SignatureSchemes};
-use bellman::{Circuit, groth16};
+
 use rand_core::OsRng;
 use serde_json;
 

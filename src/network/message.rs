@@ -2,10 +2,10 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use log::{debug, error, info};
-use std::time::SystemTime;
+
 
 use crate::network::error::NetworkError;
-use crate::network::types::{Message, NetworkEvent, PeerInfo};
+use crate::network::types::{Message, NetworkEvent};
 use crate::network::transport::TransportService;
 use crate::network::MessageType;
 
