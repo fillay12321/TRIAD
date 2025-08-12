@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use quinn::{Endpoint, ServerConfig, ClientConfig, Connection};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::sync::atomic::{AtomicU64, Ordering};
+use rand::Rng;
 
 use crate::network::types::{PeerInfo, NetworkEvent, SerializablePeerInfo};
 use crate::network::peer::PeerManager;
@@ -455,24 +456,39 @@ impl DiscoveryService {
         Ok(endpoint)
     }
 
-    /// DHT Kademlia поиск узлов
+    /// DHT Kademlia поиск узлов (как в Ethereum)
     async fn dht_find_nodes(&self, target_id: Uuid) -> Result<Vec<PeerInfo>, NetworkError> {
         let distance = self.calculate_distance(self.node_id, target_id);
         let bucket = distance % 160; // SHA-1 hash space
         
         let dht_table = self.dht_table.lock().await;
-        if let Some(entries) = dht_table.get(&bucket) {
-            let peers: Vec<PeerInfo> = entries.iter()
-                .map(|entry| PeerInfo::new(
-                    entry.node_id,
-                    format!("dht-node-{}", entry.node_id.to_string()[..8].to_string()),
-                    SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)), 8080),
-                ))
-                .collect();
-            Ok(peers)
-        } else {
-            Ok(vec![])
+        let mut all_peers = Vec::new();
+        
+        // Ищем в ближайших buckets (как в Kademlia)
+        for bucket_offset in 0..8 {
+            let search_bucket = (bucket + bucket_offset) % 160;
+            if let Some(entries) = dht_table.get(&search_bucket) {
+                for entry in entries {
+                    let peer = PeerInfo::new(
+                        entry.node_id,
+                        format!("dht-node-{}", entry.node_id.to_string()[..8].to_string()),
+                        entry.address, // Используем реальный адрес из DHT
+                    );
+                    all_peers.push(peer);
+                }
+            }
         }
+        
+        // Сортируем по расстоянию (ближайшие первыми)
+        all_peers.sort_by(|a, b| {
+            let dist_a = self.calculate_distance(self.node_id, a.id);
+            let dist_b = self.calculate_distance(self.node_id, b.id);
+            dist_a.cmp(&dist_b)
+        });
+        
+        // Возвращаем топ-20 ближайших узлов
+        all_peers.truncate(20);
+        Ok(all_peers)
     }
 
     /// Вычисляет XOR расстояние между двумя узлами (Kademlia)
@@ -522,27 +538,52 @@ impl DiscoveryService {
                     }
                 }
                 
-                // Периодически ищем новые узлы через DHT
+                // Периодически ищем новые узлы через DHT (как в Ethereum/Solana)
                 if peers.len() < 10 { // Если мало пиров, ищем активнее
                     info!("🔍 Активный поиск узлов через DHT... (пиров: {})", peers.len());
                     
-                    // Активно ищем узлы через известные IP адреса
+                    // Используем DHT для поиска новых узлов (как в Bitcoin)
                     if let Some(external_ip) = Self::get_external_ip_static().await {
                         info!("🌍 Наш внешний IP: {}", external_ip);
-                        let known_ips = vec![
-                            "193.233.127.169", // Локальный компьютер
-                            "4.210.177.129",   // Codespace
-                        ];
                         
-                        for ip in known_ips {
-                            if ip != external_ip {
-                                let addr = format!("{}:{}", ip, 8081).parse::<SocketAddr>();
-                                if let Ok(socket_addr) = addr {
-                                    info!("🔍 Пробуем подключиться к узлу: {}", socket_addr);
-                                    if let Err(e) = Self::try_connect_to_node(&quic_endpoint, socket_addr, &node_id, &node_name, tcp_port, quic_port).await {
-                                        warn!("⚠️ Не удалось подключиться к {}: {}", socket_addr, e);
-                                    }
-                                }
+                        // Ищем узлы через DHT Kademlia
+                        let dht_table = dht_table.lock().await;
+                        let mut candidate_peers = Vec::new();
+                        
+                        // Собираем все известные узлы из DHT
+                        for (bucket, entries) in dht_table.iter() {
+                            for entry in entries {
+                                let peer_addr = SocketAddr::new(
+                                    entry.address.ip(),
+                                    entry.address.port()
+                                );
+                                candidate_peers.push(peer_addr);
+                            }
+                        }
+                        
+                        // Если в DHT нет узлов, используем случайный поиск
+                        if candidate_peers.is_empty() {
+                            info!("🔍 DHT пуст, используем случайный поиск узлов");
+                            
+                            // Генерируем случайные IP адреса для поиска (как в Ethereum)
+                            let mut rng = rand::thread_rng();
+                            for _ in 0..5 {
+                                let random_ip = std::net::Ipv4Addr::new(
+                                    rng.gen_range(1..255),
+                                    rng.gen_range(1..255),
+                                    rng.gen_range(1..255),
+                                    rng.gen_range(1..255)
+                                );
+                                let addr = SocketAddr::new(IpAddr::V4(random_ip), 8081);
+                                candidate_peers.push(addr);
+                            }
+                        }
+                        
+                        // Пытаемся подключиться к найденным узлам
+                        for addr in candidate_peers {
+                            info!("🔍 Пробуем подключиться к узлу: {}", addr);
+                            if let Err(e) = Self::try_connect_to_node(&quic_endpoint, addr, &node_id, &node_name, tcp_port, quic_port).await {
+                                debug!("⚠️ Не удалось подключиться к {}: {}", addr, e);
                             }
                         }
                     } else {
@@ -601,6 +642,36 @@ impl DiscoveryService {
     /// Получает статистику производительности
     pub async fn get_performance_stats(&self) -> u64 {
         self.performance_stats.load(Ordering::Relaxed)
+    }
+    
+    /// Добавляет узел в DHT (как в Ethereum)
+    pub async fn add_node_to_dht(&self, node_id: Uuid, address: SocketAddr) {
+        let distance = self.calculate_distance(self.node_id, node_id);
+        let bucket = distance % 160;
+        
+        let mut dht_table = self.dht_table.lock().await;
+        let entries = dht_table.entry(bucket).or_insert_with(Vec::new);
+        
+        // Проверяем, есть ли уже такой узел
+        if !entries.iter().any(|e| e.node_id == node_id) {
+            let entry = DHTEntry {
+                node_id,
+                address,
+                last_seen: std::time::Instant::now(),
+                distance,
+            };
+            
+            entries.push(entry);
+            
+            // Ограничиваем размер bucket (как в Kademlia)
+            if entries.len() > DHT_BUCKET_SIZE {
+                // Удаляем самый старый узел
+                entries.sort_by_key(|e| e.last_seen);
+                entries.remove(0);
+            }
+            
+            info!("✅ Узел {} добавлен в DHT bucket {}", node_id, bucket);
+        }
     }
 
     /// Создает клиентскую конфигурацию для QUIC
@@ -939,15 +1010,36 @@ impl DiscoveryService {
             .map_err(|e| NetworkError::Internal(format!("Failed to read QUIC message: {}", e)))?;
         
         if let Ok(discovery_msg) = bincode::deserialize::<DiscoveryMessage>(&message) {
+            let node_name = discovery_msg.node_name.clone();
+            let node_id = discovery_msg.node_id;
+            let quic_port = discovery_msg.quic_port;
+            
+            info!("📥 Получено discovery сообщение от узла {} ({})", node_name, node_id);
+            
+            // Создаем адрес для пира (используем реальный IP из соединения)
+            let peer_addr = if let Some(external_ip) = discovery_msg.external_ip {
+                // Пытаемся распарсить внешний IP
+                if let Ok(ip) = external_ip.parse::<IpAddr>() {
+                    SocketAddr::new(ip, quic_port)
+                } else {
+                    // Fallback на localhost
+                    SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)), quic_port)
+                }
+            } else {
+                SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)), quic_port)
+            };
+            
             // Добавляем пира
             let peer = PeerInfo::new(
-                discovery_msg.node_id,
-                discovery_msg.node_name,
-                SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)), discovery_msg.tcp_port),
+                node_id,
+                node_name.clone(),
+                peer_addr,
             );
             
             let mut pm = peer_manager.write().await;
             pm.add_peer(peer);
+            
+            info!("✅ Пир {} добавлен в peer manager", node_name);
             
             // Отправляем ответ с нашими пирами
             let our_peers = pm.get_all_peers();
@@ -964,6 +1056,8 @@ impl DiscoveryService {
                 .map_err(|e| NetworkError::Internal(format!("Failed to send response: {}", e)))?;
             send.finish().await
                 .map_err(|e| NetworkError::Internal(format!("Failed to finish QUIC stream: {}", e)))?;
+            
+            info!("📤 Отправлен ответ с {} пирами", serializable_peers.len());
         }
         
         Ok(())
