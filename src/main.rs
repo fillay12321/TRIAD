@@ -220,11 +220,14 @@ async fn scenario_simple_tx(nodes: Arc<Mutex<Vec<SimNode>>>, metrics: Arc<Mutex<
         sender_id: sender_id.clone(),
         state_id: tx.id.to_string(),
         raw_data: vec![],
+        signature: vec![], // Добавляем пустую подпись для демо
     };
     let mut agree = 0;
     let mut guard = nodes.lock().await;
     for node in guard.iter_mut() {
-        let res = node.consensus.process_message(consensus_msg.clone());
+        // Создаем фиктивный публичный ключ для демо
+        let dummy_public_key = node.consensus.public_key.clone();
+        let res = node.consensus.process_message(consensus_msg.clone(), &dummy_public_key);
         if res.is_ok() { agree += 1; }
     }
     if agree as f64 / NODES as f64 >= 0.66 {
