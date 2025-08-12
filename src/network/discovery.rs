@@ -39,6 +39,21 @@ const DHT_BUCKET_SIZE: usize = 20;
 /// Peer exchange интервал
 const PEER_EXCHANGE_INTERVAL: Duration = Duration::from_secs(30);
 
+// Глобальный сертификат для всех узлов (чтобы handshake работал)
+lazy_static::lazy_static! {
+    static ref GLOBAL_CERT: Arc<rustls::Certificate> = {
+        let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+        let cert_der = cert.serialize_der().unwrap();
+        Arc::new(rustls::Certificate(cert_der))
+    };
+    
+    static ref GLOBAL_PRIV_KEY: Arc<rustls::PrivateKey> = {
+        let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+        let priv_key = cert.serialize_private_key_der();
+        Arc::new(rustls::PrivateKey(priv_key))
+    };
+}
+
 /// Сообщение обнаружения узлов
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DiscoveryMessage {
@@ -422,23 +437,18 @@ impl DiscoveryService {
 
     /// Создает QUIC endpoint для быстрых соединений
     async fn create_quic_endpoint(&self) -> Result<Endpoint, NetworkError> {
-        // Генерируем сертификат для QUIC
-        let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()])
-            .map_err(|e| NetworkError::Internal(format!("Failed to generate certificate: {}", e)))?;
-        
-        let cert_der = cert.serialize_der()
-            .map_err(|e| NetworkError::Internal(format!("Failed to serialize certificate: {}", e)))?;
-        
-        let priv_key = cert.serialize_private_key_der();
-        let priv_key = rustls::PrivateKey(priv_key);
+        // Используем глобальный сертификат для совместимости
+        let cert_der = GLOBAL_CERT.as_ref().clone();
+        let priv_key = GLOBAL_PRIV_KEY.as_ref().clone();
         
         // Создаем rustls конфигурацию
         let mut server_crypto = rustls::ServerConfig::builder()
             .with_safe_defaults()
             .with_no_client_auth()
-            .with_single_cert(vec![rustls::Certificate(cert_der)], priv_key)
+            .with_single_cert(vec![cert_der], priv_key)
             .map_err(|e| NetworkError::Internal(format!("Failed to create server config: {}", e)))?;
         
+        // Используем тот же ALPN протокол
         server_crypto.alpn_protocols = vec![b"triad-p2p".to_vec()];
         
         // Создаем QUIC сервер конфигурацию
@@ -766,22 +776,24 @@ impl DiscoveryService {
     async fn create_client_config_static() -> Result<ClientConfig, NetworkError> {
         let mut root_cert_store = rustls::RootCertStore::empty();
         
-        // Добавляем наш самоподписанный сертификат в доверенные
-        let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()])
-            .map_err(|e| NetworkError::Internal(format!("Failed to generate client certificate: {}", e)))?;
+        // Используем глобальный сертификат (тот же, что и сервер)
+        let cert_der = GLOBAL_CERT.as_ref().clone();
         
-        let cert_der = cert.serialize_der()
-            .map_err(|e| NetworkError::Internal(format!("Failed to serialize client certificate: {}", e)))?;
-        
-        root_cert_store.add(&rustls::Certificate(cert_der))
+        // Добавляем сертификат в доверенные
+        root_cert_store.add(&cert_der)
             .map_err(|e| NetworkError::Internal(format!("Failed to add certificate to store: {}", e)))?;
         
+        // Создаем клиентскую конфигурацию с доверенным сертификатом
         let mut client_crypto = rustls::ClientConfig::builder()
             .with_safe_defaults()
             .with_root_certificates(root_cert_store)
             .with_no_client_auth();
         
+        // Используем тот же ALPN протокол
         client_crypto.alpn_protocols = vec![b"triad-p2p".to_vec()];
+        
+        // Отключаем проверку имени хоста для тестирования
+        client_crypto.enable_sni = false;
         
         Ok(ClientConfig::new(Arc::new(client_crypto)))
     }
