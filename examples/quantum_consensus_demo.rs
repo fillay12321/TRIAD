@@ -332,7 +332,8 @@ fn process_distributed_consensus(
     accounts_state: &mut HashMap<String, AccountState>,
     pubkeys: &HashMap<String, VerifyingKey>,
     quantum_field: &Arc<StdMutex<QuantumField>>,
-    interference_engine: &Arc<StdMutex<InterferenceEngine>>
+    interference_engine: &Arc<StdMutex<InterferenceEngine>>,
+    verification_results: &[bool]
 ) -> (usize, usize) {
     let start = Instant::now();
     let mut success_count = 0;
@@ -348,7 +349,8 @@ fn process_distributed_consensus(
                 shard_id,
                 messages,
                 quantum_field,
-                interference_engine
+                interference_engine,
+                verification_results
             );
             (shard_success, messages.len() - shard_success)
         })
@@ -373,7 +375,8 @@ fn process_shard_consensus(
     shard_id: usize,
     messages: &[ConsensusMessage],
     quantum_field: &Arc<StdMutex<QuantumField>>,
-    interference_engine: &Arc<StdMutex<InterferenceEngine>>
+    interference_engine: &Arc<StdMutex<InterferenceEngine>>,
+    verification_results: &[bool]
 ) -> usize {
     println!("🔬 [Shard {}] Processing {} messages", shard_id, messages.len());
     
@@ -435,11 +438,28 @@ fn process_shard_consensus(
     println!("🔬 [Shard {}] Decision creation: {:.3}ms | Outcome: {} (prob: {:.3})", 
         shard_id, decision_time.as_secs_f64() * 1000.0, outcome.label, outcome.probability);
     
-    let success_count = match outcome.label.as_str() {
-        "ConsensusReached" => messages.len(),
-        "ConflictDetected" => 0,
-        "PartialConsensus" => (messages.len() as f64 * 0.7) as usize,
-        _ => 0,
+    // Фильтруем сообщения по результатам BLS верификации
+    let valid_messages: Vec<&ConsensusMessage> = messages.iter()
+        .enumerate()
+        .filter(|(i, _)| {
+            // Проверяем, что индекс не выходит за пределы результатов верификации
+            *i < verification_results.len() && verification_results[*i]
+        })
+        .map(|(_, msg)| msg)
+        .collect();
+    
+    println!("🔬 [Shard {}] BLS filtered: {}/{} messages valid", shard_id, valid_messages.len(), messages.len());
+    
+    // Применяем квантовый консенсус только к валидным сообщениям
+    let success_count = if valid_messages.is_empty() {
+        0 // Нет валидных подписей - все отклоняем
+    } else {
+        match outcome.label.as_str() {
+            "ConsensusReached" => valid_messages.len(),
+            "ConflictDetected" => 0,
+            "PartialConsensus" => (valid_messages.len() as f64 * 0.7) as usize,
+            _ => 0,
+        }
     };
     
     let total_shard_time = wave_start.elapsed();
@@ -797,6 +817,7 @@ impl DistributedNetworkManager {
             let quantum_field = self.quantum_field.clone();
             let interference_engine = self.interference_engine.clone();
             
+            let verification_results_clone = verification_results.clone();
             let consensus_future = spawn_blocking(move || {
                 process_distributed_consensus(
                     &mut nodes_clone,
@@ -804,7 +825,8 @@ impl DistributedNetworkManager {
                     &mut HashMap::new(), // Упрощенное состояние для демо
                     &HashMap::new(), // Упрощенные ключи для демо
                     &quantum_field,
-                    &interference_engine
+                    &interference_engine,
+                    &verification_results_clone // Передаем результаты BLS верификации
                 )
             });
             
@@ -977,6 +999,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Создаем сообщения для каждого шарда без повторной сериализации
             let sharded_messages = create_sharded_messages_from_serialized(serialized, 3);
             
+            // Реальная BLS верификация для локального режима
+            let verification_results = verify_bls_signatures_local(&tx_pool.transactions, &bls_keypool);
+            
             // Обрабатываем консенсус
             let start = Instant::now();
             let (success_count, failure_count) = process_distributed_consensus(
@@ -985,7 +1010,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut accounts_state,
                 &pubkeys,
                 &local_field,
-                &local_engine
+                &local_engine,
+                &verification_results
             );
             
             let consensus_reached = check_distributed_consensus(&nodes, round);
@@ -1003,4 +1029,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     
     Ok(())
+}
+
+// Функция для локальной BLS верификации
+fn verify_bls_signatures_local(transactions: &[DemoTransaction], bls_keypool: &BlsKeyPool) -> Vec<bool> {
+    let start = Instant::now();
+    let mut verification_results = Vec::new();
+    
+    for tx in transactions {
+        // Получаем подпись и публичный ключ
+        if let Ok(signature) = BlsSignature::<Bls12381G1Impl>::try_from(tx.signature.as_slice()) {
+            let public_key = bls_keypool.get_public_key(tx.public_key_idx);
+            
+            // Создаем сообщение для верификации
+            let message = format!("{}:{}:{}:{}", tx.from, tx.to, tx.amount, tx.nonce);
+            
+            // Проверяем подпись
+            let is_valid = match signature.verify(public_key, message.as_bytes()) {
+                Ok(_) => true,
+                Err(_) => false,
+            };
+            verification_results.push(is_valid);
+        } else {
+            verification_results.push(false);
+        }
+    }
+    
+    let verification_time = start.elapsed();
+    let sig_per_sec = verification_results.len() as f64 / verification_time.as_secs_f64();
+    println!("🔐 Local BLS Verification: {} signatures in {:.3}ms ({:.0} sig/sec)", 
+        verification_results.len(), verification_time.as_secs_f64() * 1000.0, sig_per_sec);
+    
+    verification_results
 }
