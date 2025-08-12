@@ -268,11 +268,14 @@ impl QuantumNetworkHandler {
             sender_id: from.to_string(),
             state_id: transaction.id.to_string(),
             raw_data: bincode::serialize(&transaction).unwrap_or_default(),
+            signature: vec![], // Пустая подпись для демо
         };
 
         {
             let mut consensus = self.consensus_node.lock().await;
-            if let Err(e) = consensus.process_message(consensus_message) {
+            // Создаем фиктивный публичный ключ для демо
+            let dummy_public_key = consensus.public_key.clone();
+            if let Err(e) = consensus.process_message(consensus_message, &dummy_public_key) {
                 error!("Ошибка обработки транзакции в консенсусе: {}", e);
             }
         }
@@ -285,7 +288,9 @@ impl QuantumNetworkHandler {
         
         {
             let mut consensus = self.consensus_node.lock().await;
-            if let Err(e) = consensus.process_message(consensus_msg) {
+            // Создаем фиктивный публичный ключ для демо
+            let dummy_public_key = consensus.public_key.clone();
+            if let Err(e) = consensus.process_message(consensus_msg, &dummy_public_key) {
                 error!("Ошибка обработки консенсусного сообщения: {}", e);
             }
         }

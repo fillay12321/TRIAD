@@ -52,7 +52,7 @@ __kernel void calculate_interference_optimized(
             double amp = amplitudes[idx];
             double phase = phases[idx];
             // Используем fast_math для ускорения тригонометрии
-            local_buffer[lid] = amp * native_cos(2.0 * PI * x + phase);
+            local_buffer[lid] = amp * cos(2.0 * PI * x + phase);
         } else {
             local_buffer[lid] = 0.0;
         }
@@ -135,8 +135,8 @@ __kernel void calculate_interference_batch(
         if (idx < num_states) {
             double amp = amplitudes[idx];
             double phase = phases[idx];
-            // Используем fast_math и vectorization
-            local_buffer[lid] = amp * native_cos(2.0 * PI * x + phase);
+            // Используем стандартный cos вместо native_cos для совместимости
+            local_buffer[lid] = amp * cos(2.0 * PI * x + phase);
         } else {
             local_buffer[lid] = 0.0;
         }
@@ -159,4 +159,86 @@ __kernel void calculate_interference_batch(
     if (lid == 0) {
         result[gid] = sum * normalization_factor;
     }
+}
+
+// ВЕКТОРИЗОВАННЫЙ KERNEL для Intel GPU - обрабатывает 4 точки одновременно
+__kernel void calculate_interference_vectorized(
+    __global const float* amplitudes,
+    __global const float* phases,
+    __global float4* result,
+    uint num_states,
+    uint resolution,
+    float step
+) {
+    uint gid = get_global_id(0);
+    uint lid = get_local_id(0);
+    
+    if (gid >= resolution / 4) return; // Обрабатываем по 4 точки
+    
+    // Вычисляем 4 позиции одновременно
+    float4 x = (float4)(
+        gid * 4 * step,
+        (gid * 4 + 1) * step,
+        (gid * 4 + 2) * step,
+        (gid * 4 + 3) * step
+    );
+    
+    float4 total_amplitude = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+    float4 total_phase = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+    
+    // Векторизованный проход по состояниям
+    for (uint i = 0; i < num_states; i++) {
+        float amp = amplitudes[i];
+        float phase = phases[i];
+        
+        // Векторизованное вычисление интерференции для 4 точек
+        float4 contribution = (float4)(
+            amp * cos(2.0f * PI * x.x + phase),
+            amp * cos(2.0f * PI * x.y + phase),
+            amp * cos(2.0f * PI * x.z + phase),
+            amp * cos(2.0f * PI * x.w + phase)
+        );
+        total_amplitude += contribution;
+        total_phase += (float4)(phase, phase, phase, phase);
+    }
+    
+    // Сохраняем результат для 4 точек
+    result[gid] = total_amplitude;
+}
+
+// ВЕКТОРИЗОВАННЫЙ KERNEL для анализа интерференции
+__kernel void analyze_interference_vectorized(
+    __global const float4* amplitudes,
+    __global uint* constructive_count,
+    __global uint* destructive_count,
+    __global float* max_amplitude,
+    __global float* min_amplitude,
+    __global float* sum_amplitude,
+    uint resolution,
+    float threshold
+) {
+    uint gid = get_global_id(0);
+    
+    if (gid >= resolution / 4) return;
+    
+    float4 amp = amplitudes[gid];
+    
+    // Подсчет для 4 точек (с атомарными операциями для NVIDIA T4)
+    if (amp.x > threshold) atomic_inc(constructive_count);
+    if (amp.x < -threshold) atomic_inc(destructive_count);
+    if (amp.y > threshold) atomic_inc(constructive_count);
+    if (amp.y < -threshold) atomic_inc(destructive_count);
+    if (amp.z > threshold) atomic_inc(constructive_count);
+    if (amp.z < -threshold) atomic_inc(destructive_count);
+    if (amp.w > threshold) atomic_inc(constructive_count);
+    if (amp.w < -threshold) atomic_inc(destructive_count);
+    
+    // Обновляем статистику (с атомарными операциями)
+    float max_val = fmax(fmax(amp.x, amp.y), fmax(amp.z, amp.w));
+    float min_val = fmin(fmin(amp.x, amp.y), fmin(amp.z, amp.w));
+    float sum_val = amp.x + amp.y + amp.z + amp.w;
+    
+    atomic_max(max_amplitude, max_val);
+    atomic_min(min_amplitude, min_val);
+    atomic_add(sum_amplitude, sum_val);
 }

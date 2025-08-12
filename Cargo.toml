@@ -90,6 +90,8 @@ default = []
 cuda = ["cust"]
 opencl = ["ocl"]
 webrtc = ["libp2p-webrtc"]
+consensus = []
+processor = []
 
 [dev-dependencies]
 criterion = "0.5.1"    # Для бенчмарков

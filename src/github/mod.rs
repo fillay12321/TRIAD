@@ -13,10 +13,20 @@ pub struct GitHubCodespaces {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Codespace {
-    pub id: String,
+pub struct Machine {
     pub name: String,
-    pub machine: String,
+    pub display_name: String,
+    pub operating_system: String,
+    pub storage_in_bytes: u64,
+    pub memory_in_bytes: u64,
+    pub cpus: u32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Codespace {
+    pub id: u64, // GitHub API возвращает integer
+    pub name: String,
+    pub machine: Machine, // GitHub API возвращает объект
     pub state: String,
     pub url: String,
     pub web_url: String,
@@ -41,6 +51,20 @@ pub struct CreateCodespaceResponse {
     pub codespace: Codespace,
 }
 
+// GitHub API возвращает codespace напрямую, а не в поле codespace
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum CreateCodespaceResponseEnum {
+    Wrapped { codespace: Codespace },
+    Direct(Codespace),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListCodespacesResponse {
+    pub codespaces: Vec<Codespace>,
+    pub total_count: u32,
+}
+
 impl GitHubCodespaces {
     pub fn new(token: String, owner: String, repo: String) -> Self {
         Self {
@@ -56,10 +80,10 @@ impl GitHubCodespaces {
         let url = "https://api.github.com/user/codespaces";
         
         let request = CreateCodespaceRequest {
-            repository_id: 0, // Будет получен из repo
+            repository_id: 987166369, // TRIAD repository ID
             machine: Some(machine.to_string()),
             location: Some(location.to_string()),
-            idle_timeout_minutes: Some(480), // 8 часов
+            idle_timeout_minutes: Some(240), // 4 часа (максимум)
             retention_period_minutes: Some(1440), // 24 часа
         };
 
@@ -75,14 +99,19 @@ impl GitHubCodespaces {
 
         let status = response.status();
         if status.is_success() {
-            let codespace_response: CreateCodespaceResponse = response.json().await
+            let codespace_response: CreateCodespaceResponseEnum = response.json().await
                 .map_err(|e| format!("Failed to parse response: {}", e))?;
             
-            info!("✅ Created GitHub Codespace: {} ({})", 
-                  codespace_response.codespace.name, 
-                  codespace_response.codespace.id);
+            let codespace = match codespace_response {
+                CreateCodespaceResponseEnum::Wrapped { codespace } => codespace,
+                CreateCodespaceResponseEnum::Direct(codespace) => codespace,
+            };
             
-            Ok(codespace_response.codespace)
+            info!("✅ Created GitHub Codespace: {} ({})", 
+                  codespace.name, 
+                  codespace.id);
+            
+            Ok(codespace)
         } else {
             let error_text = response.text().await.unwrap_or_default();
             Err(format!("Failed to create codespace: {} - {}", status, error_text))
@@ -104,11 +133,11 @@ impl GitHubCodespaces {
 
         let status = response.status();
         if status.is_success() {
-            let codespaces: Vec<Codespace> = response.json().await
+            let response_data: ListCodespacesResponse = response.json().await
                 .map_err(|e| format!("Failed to parse response: {}", e))?;
             
-            info!("📋 Found {} GitHub Codespaces", codespaces.len());
-            Ok(codespaces)
+            info!("📋 Found {} GitHub Codespaces", response_data.total_count);
+            Ok(response_data.codespaces)
         } else {
             let error_text = response.text().await.unwrap_or_default();
             Err(format!("Failed to list codespaces: {} - {}", status, error_text))
@@ -259,7 +288,7 @@ impl GitHubCodespaces {
         info!("🛑 Found {} TRIAD codespaces to stop", triad_codespaces.len());
 
         for codespace in triad_codespaces {
-            if let Err(e) = self.stop_codespace(&codespace.id).await {
+            if let Err(e) = self.stop_codespace(&codespace.id.to_string()).await {
                 warn!("⚠️  Failed to stop codespace {}: {}", codespace.name, e);
             }
         }

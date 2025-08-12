@@ -21,7 +21,8 @@ impl Shard {
     pub fn process_messages(&mut self, all_messages: &[Vec<ConsensusMessage>]) {
         self.nodes.par_iter_mut().enumerate().for_each(|(node_idx, node)| {
             for message in &all_messages[node_idx] {
-                let _ = node.process_message(message.clone());
+                let public_key = node.public_key.clone();
+                let _ = node.process_message(message.clone(), &public_key);
             }
         });
     }
@@ -29,7 +30,8 @@ impl Shard {
     pub fn process_batches(&mut self, all_batches: &[Vec<ConsensusMessage>]) {
         self.nodes.par_iter_mut().enumerate().for_each(|(node_idx, node)| {
             for batch in &all_batches[node_idx] {
-                let _ = node.process_message(batch.clone());
+                let public_key = node.public_key.clone();
+                let _ = node.process_message(batch.clone(), &public_key);
             }
         });
     }

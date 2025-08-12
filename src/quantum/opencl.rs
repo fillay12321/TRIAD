@@ -8,10 +8,16 @@ pub struct OpenClInterferenceEngine {
     kernel: Kernel,
     optimized_kernel: Kernel,
     analysis_kernel: Kernel,
+    vectorized_kernel: Kernel,
+    vectorized_analysis_kernel: Kernel,
     // Буферы для примитивных типов f64
     amplitudes_buffer: Buffer<f64>,
     phases_buffer: Buffer<f64>,
     result_buffer: Buffer<f64>,
+    // ВЕКТОРИЗОВАННЫЕ буферы для Intel GPU (float4)
+    vectorized_amplitudes_buffer: Buffer<f32>,
+    vectorized_phases_buffer: Buffer<f32>,
+    vectorized_result_buffer: Buffer<f32>,
     constructive_buffer: Buffer<u32>,
     destructive_buffer: Buffer<u32>,
     max_amp_buffer: Buffer<f64>,
@@ -40,27 +46,76 @@ impl OpenClInterferenceEngine {
             .src(kernel_src)
             .build(&context)?;
         
-        // Create kernels
+        // Create kernels with proper argument specification
         let kernel = Kernel::builder()
             .program(&program)
             .name("calculate_interference")
             .queue(queue.clone())
+            .arg(None::<&Buffer<f64>>) // amplitudes
+            .arg(None::<&Buffer<f64>>) // phases  
+            .arg(None::<&Buffer<f64>>) // result
+            .arg(0u32) // num_states
+            .arg(0u32) // resolution
+            .arg(0.0f64) // step
             .build()?;
         
         let optimized_kernel = Kernel::builder()
             .program(&program)
             .name("calculate_interference_optimized")
             .queue(queue.clone())
+            .arg(None::<&Buffer<f64>>) // amplitudes
+            .arg(None::<&Buffer<f64>>) // phases
+            .arg(None::<&Buffer<f64>>) // result
+            .arg(None::<&Buffer<f64>>) // local_buffer
+            .arg(0u32) // num_states
+            .arg(0u32) // resolution
+            .arg(0.0f64) // step
+            .arg(0.0f64) // normalization_factor
             .build()?;
         
         let analysis_kernel = Kernel::builder()
             .program(&program)
             .name("analyze_interference")
             .queue(queue.clone())
+            .arg(None::<&Buffer<f64>>) // amplitudes
+            .arg(None::<&Buffer<u32>>) // constructive_count
+            .arg(None::<&Buffer<u32>>) // destructive_count
+            .arg(None::<&Buffer<f64>>) // max_amplitude
+            .arg(None::<&Buffer<f64>>) // min_amplitude
+            .arg(None::<&Buffer<f64>>) // sum_amplitude
+            .arg(0u32) // resolution
+            .arg(0.0f64) // threshold
             .build()?;
         
-        // Get optimal local work group size (default to 256 if not available)
-        let local_size = 256; // Default optimal size for most GPUs
+        // ВЕКТОРИЗОВАННЫЕ KERNELS для Intel GPU
+        let vectorized_kernel = Kernel::builder()
+            .program(&program)
+            .name("calculate_interference_vectorized")
+            .queue(queue.clone())
+            .arg(None::<&Buffer<f32>>) // amplitudes (float4)
+            .arg(None::<&Buffer<f32>>) // phases (float4)
+            .arg(None::<&Buffer<f32>>) // result (float4)
+            .arg(0u32) // num_states
+            .arg(0u32) // resolution
+            .arg(0.0f32) // step
+            .build()?;
+        
+        let vectorized_analysis_kernel = Kernel::builder()
+            .program(&program)
+            .name("analyze_interference_vectorized")
+            .queue(queue.clone())
+            .arg(None::<&Buffer<f32>>) // amplitudes (float4)
+            .arg(None::<&Buffer<u32>>) // constructive_count
+            .arg(None::<&Buffer<u32>>) // destructive_count
+            .arg(None::<&Buffer<f32>>) // max_amplitude
+            .arg(None::<&Buffer<f32>>) // min_amplitude
+            .arg(None::<&Buffer<f32>>) // sum_amplitude
+            .arg(0u32) // resolution
+            .arg(0.0f32) // threshold
+            .build()?;
+        
+        // Get optimal local work group size - адаптивный размер для разных GPU
+        let local_size = 64; // Оптимальный размер для NVIDIA T4, fallback на 1 для Intel
         
         // Create buffers with primitive types - ОПТИМИЗИРОВАННЫЕ размеры
         let amplitudes_buffer = Buffer::<f64>::builder()
@@ -79,6 +134,25 @@ impl OpenClInterferenceEngine {
             .queue(queue.clone())
             .flags(MemFlags::new().write_only())
             .len(100000) // Увеличиваем до 100000 для высокого разрешения
+            .build()?;
+        
+        // ВЕКТОРИЗОВАННЫЕ буферы для Intel GPU (float4)
+        let vectorized_amplitudes_buffer = Buffer::<f32>::builder()
+            .queue(queue.clone())
+            .flags(MemFlags::new().read_only())
+            .len(50000) // Обычные float для входных данных
+            .build()?;
+        
+        let vectorized_phases_buffer = Buffer::<f32>::builder()
+            .queue(queue.clone())
+            .flags(MemFlags::new().read_only())
+            .len(50000) // Обычные float для входных данных
+            .build()?;
+        
+        let vectorized_result_buffer = Buffer::<f32>::builder()
+            .queue(queue.clone())
+            .flags(MemFlags::new().write_only())
+            .len(100000) // Обычные float для результатов
             .build()?;
         
         let constructive_buffer = Buffer::<u32>::builder()
@@ -116,9 +190,14 @@ impl OpenClInterferenceEngine {
             kernel,
             optimized_kernel,
             analysis_kernel,
+            vectorized_kernel,
+            vectorized_analysis_kernel,
             amplitudes_buffer,
             phases_buffer,
             result_buffer,
+            vectorized_amplitudes_buffer,
+            vectorized_phases_buffer,
+            vectorized_result_buffer,
             constructive_buffer,
             destructive_buffer,
             max_amp_buffer,
@@ -133,9 +212,18 @@ impl OpenClInterferenceEngine {
             return Ok(Vec::new());
         }
         
-        // ОПТИМИЗАЦИЯ: Используем оптимизированный kernel для больших батчей
-        if states.len() > 1000 {
-            return self.calculate_interference_optimized(states, resolution);
+        // АВТОМАТИЧЕСКИЙ ВЫБОР: используем векторный kernel для Intel GPU если возможно
+        if states.len() >= 100 && resolution >= 1000 && resolution % 4 == 0 {
+            // Пытаемся использовать векторный kernel
+            match self.calculate_interference_vectorized(states, resolution) {
+                Ok(points) => {
+                    println!("🚀 Using vectorized kernel (Intel GPU optimized)");
+                    return Ok(points);
+                },
+                Err(e) => {
+                    println!("⚠️  Vectorized kernel failed: {}, falling back to standard kernel", e);
+                }
+            }
         }
         
         let step = 1.0 / resolution as f64;
@@ -182,6 +270,75 @@ impl OpenClInterferenceEngine {
                 InterferencePoint {
                     position: x,
                     amplitude: result_data[i],
+                    phase: 0.0, // Phase not calculated in this kernel
+                }
+            })
+            .collect();
+        
+        Ok(points)
+    }
+    
+    // ВЕКТОРИЗОВАННЫЙ метод для Intel GPU
+    pub fn calculate_interference_vectorized(&self, states: &[QuantumState], resolution: usize) -> OclResult<Vec<InterferencePoint>> {
+        if states.is_empty() || resolution == 0 {
+            return Ok(Vec::new());
+        }
+        
+        // Проверяем что resolution делится на 4 для float4
+        if resolution % 4 != 0 {
+            return Err(ocl::Error::from("Resolution must be divisible by 4 for vectorized kernel"));
+        }
+        
+        let step = 1.0f32 / (resolution / 4) as f32;
+        
+        // Подготавливаем данные для float4 (правильная упаковка)
+        let mut vectorized_amplitudes = Vec::with_capacity(states.len());
+        let mut vectorized_phases = Vec::with_capacity(states.len());
+        
+        for state in states {
+            vectorized_amplitudes.push(state.amplitude as f32);
+            vectorized_phases.push(state.phase as f32);
+        }
+        
+        // Записываем данные в GPU буферы
+        self.vectorized_amplitudes_buffer.write(&vectorized_amplitudes).enq()?;
+        self.vectorized_phases_buffer.write(&vectorized_phases).enq()?;
+        
+        // Устанавливаем аргументы kernel
+        self.vectorized_kernel.set_arg(0, &self.vectorized_amplitudes_buffer)?;
+        self.vectorized_kernel.set_arg(1, &self.vectorized_phases_buffer)?;
+        self.vectorized_kernel.set_arg(2, &self.vectorized_result_buffer)?;
+        let ns = states.len() as u32;
+        let res = resolution as u32;
+        self.vectorized_kernel.set_arg(3, &ns)?;
+        self.vectorized_kernel.set_arg(4, &res)?;
+        self.vectorized_kernel.set_arg(5, &step)?;
+        
+        // Выполняем kernel
+        let global_size = resolution / 4; // Обрабатываем по 4 точки
+        let local_size = self.local_size.min(global_size);
+        
+        unsafe {
+            self.vectorized_kernel.cmd()
+                .global_work_size(global_size)
+                .local_work_size(local_size)
+                .enq()?;
+        }
+        
+        // ОПТИМИЗАЦИЯ: Убираем лишние finish() вызовы
+        self.pro_que.queue().finish()?;
+        
+        // Читаем результаты
+        let mut result_data = vec![0.0f32; resolution];
+        self.vectorized_result_buffer.read(&mut result_data).enq()?;
+        
+        // Конвертируем в InterferencePoint
+        let points: Vec<InterferencePoint> = (0..resolution)
+            .map(|i| {
+                let x = i as f64 * (step as f64);
+                InterferencePoint {
+                    position: x,
+                    amplitude: result_data[i] as f64,
                     phase: 0.0, // Phase not calculated in this kernel
                 }
             })

@@ -61,7 +61,7 @@ impl OpenClAccelerator {
 #[cfg(feature = "opencl")]
 impl QuantumInterferenceAccelerator for OpenClAccelerator {
     fn calculate(&self, states: &[QuantumState], resolution: usize) -> Vec<InterferencePoint> {
-        match self.engine.calculate_interference_optimized(states, resolution) {
+        match self.engine.calculate_interference(states, resolution) {
             Ok(points) => points,
             Err(e) => {
                 eprintln!("OpenCL calculation failed: {}, falling back to CPU", e);
@@ -150,8 +150,8 @@ impl InterferenceEngine {
         for wave in field.active_waves.values() {
             self.state_buffer.push(QuantumState::from(wave));
         }
-        // Run calculation with the reusable buffer
-        self.calculate_interference_pattern(&self.state_buffer)
+        // Run calculation with GPU acceleration if available
+        self.calculate_interference_auto(&self.state_buffer)
     }
     
     fn calculate_state_contribution_fast(&self, amplitude: f64, phase: f64, x: f64) -> (f64, f64) {

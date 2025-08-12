@@ -58,7 +58,8 @@ impl QuantumField {
         }
         
         self.active_waves.insert(key, wave);
-        self.update_interference(10_000); // Обновляем интерференцию с высоким разрешением
+        // Убираем автоматическое обновление интерференции - будем вызывать только когда нужно
+        // self.update_interference(10_000); // Обновляем интерференцию с высоким разрешением
     }
 
     pub fn cleanup_expired_waves(&mut self) {
