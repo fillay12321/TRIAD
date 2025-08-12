@@ -27,7 +27,7 @@ const DISCOVERY_INTERVAL: Duration = Duration::from_secs(15);
 const BUFFER_SIZE: usize = 1024;
 
 /// Глобальные bootstrap узлы для быстрого старта P2P сети
-/// Отключены для автоматического обнаружения через peer exchange
+/// Первый узел становится bootnode для других
 const BOOTSTRAP_NODES: &[&str] = &[];
 
 /// QUIC порт для быстрых соединений
@@ -515,6 +515,16 @@ impl DiscoveryService {
         let tcp_port = self.tcp_port;
         let quic_port = self.quic_port;
         
+        // Проверяем, является ли узел bootnode
+        if self.is_bootnode().await {
+            info!("🚀 Узел {} запущен как BOOTNODE", node_name);
+            if let Some(public_addr) = self.get_public_address().await {
+                info!("🌍 Другие узлы могут подключиться по адресу: {}", public_addr);
+            }
+        } else {
+            info!("🔗 Узел {} запущен как обычный узел", node_name);
+        }
+        
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(PEER_EXCHANGE_INTERVAL);
             
@@ -551,7 +561,7 @@ impl DiscoveryService {
                         let mut candidate_peers = Vec::new();
                         
                         // Собираем все известные узлы из DHT
-                        for (bucket, entries) in dht_table.iter() {
+                        for (_bucket, entries) in dht_table.iter() {
                             for entry in entries {
                                 let peer_addr = SocketAddr::new(
                                     entry.address.ip(),
@@ -561,21 +571,31 @@ impl DiscoveryService {
                             }
                         }
                         
-                        // Если в DHT нет узлов, используем случайный поиск
+                        // Если в DHT нет узлов, ищем bootnode
                         if candidate_peers.is_empty() {
-                            info!("🔍 DHT пуст, используем случайный поиск узлов");
+                            info!("🔍 DHT пуст, ищем bootnode...");
                             
-                            // Генерируем случайные IP адреса для поиска (как в Ethereum)
-                            let mut rng = rand::thread_rng();
-                            for _ in 0..5 {
-                                let random_ip = std::net::Ipv4Addr::new(
-                                    rng.gen_range(1..255),
-                                    rng.gen_range(1..255),
-                                    rng.gen_range(1..255),
-                                    rng.gen_range(1..255)
-                                );
-                                let addr = SocketAddr::new(IpAddr::V4(random_ip), 8081);
-                                candidate_peers.push(addr);
+                            // Проверяем, есть ли у нас сохраненный адрес bootnode
+                            if let Some(bootnode_addr) = Self::get_bootnode_address().await {
+                                info!("🔍 Найден bootnode: {}", bootnode_addr);
+                                if let Ok(addr) = bootnode_addr.parse::<SocketAddr>() {
+                                    candidate_peers.push(addr);
+                                }
+                            } else {
+                                info!("🔍 Bootnode не найден, используем случайный поиск");
+                                
+                                // Генерируем случайные IP адреса для поиска (как в Ethereum)
+                                let mut rng = rand::thread_rng();
+                                for _ in 0..3 { // Уменьшаем количество случайных попыток
+                                    let random_ip = std::net::Ipv4Addr::new(
+                                        rng.gen_range(1..255),
+                                        rng.gen_range(1..255),
+                                        rng.gen_range(1..255),
+                                        rng.gen_range(1..255)
+                                    );
+                                    let addr = SocketAddr::new(IpAddr::V4(random_ip), 8081);
+                                    candidate_peers.push(addr);
+                                }
                             }
                         }
                         
@@ -637,6 +657,50 @@ impl DiscoveryService {
         // 2. У него достаточно пиров для маршрутизации
         // 3. Он стабилен и доступен
         external_ip.is_some() && peers.len() >= 2
+    }
+    
+    /// Проверяет, является ли узел bootnode
+    async fn is_bootnode(&self) -> bool {
+        let external_ip = self.get_external_ip().await;
+        
+        // Узел является bootnode если:
+        // 1. У него есть внешний IP (не за NAT)
+        // 2. Он доступен из интернета
+        // 3. Он может принимать входящие соединения
+        if let Some(ip) = external_ip {
+            // Проверяем, что IP публичный (не localhost, не private)
+            if !ip.starts_with("127.") && !ip.starts_with("192.168.") && !ip.starts_with("10.") {
+                info!("🚀 Узел {} является bootnode с IP {}", self.node_name, ip);
+                return true;
+            }
+        }
+        
+        false
+    }
+    
+    /// Получает адрес для подключения других узлов
+    pub async fn get_public_address(&self) -> Option<String> {
+        if let Some(external_ip) = self.get_external_ip().await {
+            if self.is_bootnode().await {
+                let addr = format!("{}:{}", external_ip, self.quic_port);
+                info!("🌍 Публичный адрес bootnode: {}", addr);
+                return Some(addr);
+            }
+        }
+        None
+    }
+    
+    /// Получает адрес bootnode из кэша или определяет автоматически
+    async fn get_bootnode_address() -> Option<String> {
+        // TODO: В будущем можно сохранять в файл или использовать DNS
+        // Пока что возвращаем None - bootnode будет найден через peer exchange
+        None
+    }
+    
+    /// Сохраняет адрес bootnode для других узлов
+    async fn save_bootnode_address(&self, address: String) {
+        info!("💾 Сохраняем адрес bootnode: {}", address);
+        // TODO: В будущем сохранять в файл или отправлять в DHT
     }
 
     /// Получает статистику производительности
@@ -1005,6 +1069,10 @@ impl DiscoveryService {
             .await
             .map_err(|e| NetworkError::Internal(format!("Failed to open QUIC stream: {}", e)))?;
         
+        // Получаем реальный адрес подключившегося узла
+        let remote_addr = conn.remote_address();
+        info!("📥 QUIC соединение от узла: {}", remote_addr);
+        
         // Читаем discovery сообщение
         let message = recv.read_to_end(1024 * 1024).await
             .map_err(|e| NetworkError::Internal(format!("Failed to read QUIC message: {}", e)))?;
@@ -1016,18 +1084,22 @@ impl DiscoveryService {
             
             info!("📥 Получено discovery сообщение от узла {} ({})", node_name, node_id);
             
-            // Создаем адрес для пира (используем реальный IP из соединения)
-            let peer_addr = if let Some(external_ip) = discovery_msg.external_ip {
-                // Пытаемся распарсить внешний IP
+            // Создаем адрес для пира (используем реальный IP из QUIC соединения)
+            let peer_addr = if let Some(ref external_ip) = discovery_msg.external_ip {
+                // Пытаемся распарсить внешний IP из discovery сообщения
                 if let Ok(ip) = external_ip.parse::<IpAddr>() {
                     SocketAddr::new(ip, quic_port)
                 } else {
-                    // Fallback на localhost
-                    SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)), quic_port)
+                    // Fallback на IP из QUIC соединения
+                    SocketAddr::new(remote_addr.ip(), quic_port)
                 }
             } else {
-                SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)), quic_port)
+                // Используем IP из QUIC соединения
+                SocketAddr::new(remote_addr.ip(), quic_port)
             };
+            
+            info!("🌍 Адрес пира: {} (из QUIC: {}, из discovery: {})", 
+                  peer_addr, remote_addr, discovery_msg.external_ip.as_deref().unwrap_or("не указан"));
             
             // Добавляем пира
             let peer = PeerInfo::new(
@@ -1039,7 +1111,7 @@ impl DiscoveryService {
             let mut pm = peer_manager.write().await;
             pm.add_peer(peer);
             
-            info!("✅ Пир {} добавлен в peer manager", node_name);
+            info!("✅ Пир {} добавлен в peer manager с адресом {}", node_name, peer_addr);
             
             // Отправляем ответ с нашими пирами
             let our_peers = pm.get_all_peers();
