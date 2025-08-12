@@ -761,6 +761,30 @@ impl DiscoveryService {
         
         Ok(ClientConfig::new(Arc::new(client_crypto)))
     }
+    
+    /// Статическая функция для создания клиентской конфигурации
+    async fn create_client_config_static() -> Result<ClientConfig, NetworkError> {
+        let mut root_cert_store = rustls::RootCertStore::empty();
+        
+        // Добавляем наш самоподписанный сертификат в доверенные
+        let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()])
+            .map_err(|e| NetworkError::Internal(format!("Failed to generate client certificate: {}", e)))?;
+        
+        let cert_der = cert.serialize_der()
+            .map_err(|e| NetworkError::Internal(format!("Failed to serialize client certificate: {}", e)))?;
+        
+        root_cert_store.add(&rustls::Certificate(cert_der))
+            .map_err(|e| NetworkError::Internal(format!("Failed to add certificate to store: {}", e)))?;
+        
+        let mut client_crypto = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(root_cert_store)
+            .with_no_client_auth();
+        
+        client_crypto.alpn_protocols = vec![b"triad-p2p".to_vec()];
+        
+        Ok(ClientConfig::new(Arc::new(client_crypto)))
+    }
 
     /// Получает внешний IP адрес с автоматическим NAT traversal
     async fn get_external_ip(&self) -> Option<String> {
@@ -988,8 +1012,17 @@ impl DiscoveryService {
             
             info!("📤 Отправляем discovery сообщение размером {} байт", msg_bytes.len());
             
+            // Создаем клиентскую конфигурацию для QUIC
+            let client_config = match Self::create_client_config_static().await {
+                Ok(config) => config,
+                Err(e) => {
+                    warn!("⚠️ Не удалось создать QUIC клиентскую конфигурацию: {}", e);
+                    return Ok(());
+                }
+            };
+            
             // Пытаемся подключиться через QUIC
-            match endpoint.connect(addr, "localhost") {
+            match endpoint.connect_with(client_config, addr, "localhost") {
                 Ok(connecting) => {
                     info!("🔄 QUIC подключение инициировано к {}", addr);
                     match connecting.await {
@@ -1001,7 +1034,7 @@ impl DiscoveryService {
                                     info!("✅ Discovery сообщение отправлено узлу {}", addr);
                                     
                                     // Читаем ответ
-                                    let mut response: Vec<u8> = Vec::new();
+                                    let response: Vec<u8> = Vec::new();
                                     if let Ok(_) = recv.read_to_end(1024 * 1024).await {
                                         info!("📥 Получен ответ от узла {} размером {} байт", addr, response.len());
                                     }
