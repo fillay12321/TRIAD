@@ -555,14 +555,41 @@ fn bls_batch_verify_transaction_signatures(transactions: &[DemoTransaction], bls
         return vec![false; transactions.len()];
     }
     
-    // Быстрая проверка: если все подписи валидны, считаем все транзакции валидными
-    let verification_time = start.elapsed();
+    // Реальная проверка BLS подписей
+    let verification_start = Instant::now();
+    let mut verification_results = Vec::new();
+    
+    for (i, (signature, public_key)) in signatures.iter().zip(public_keys.iter()).enumerate() {
+        // Получаем оригинальную транзакцию для восстановления сообщения
+        if i < transactions_to_check.len() {
+            let tx = &transactions_to_check[i];
+            let message = format!("{}:{}:{}:{}", tx.from, tx.to, tx.amount, tx.nonce);
+            
+            // Проверяем подпись с реальными данными транзакции
+            let is_valid = match signature.verify(public_key, message.as_bytes()) {
+                Ok(_) => true,
+                Err(_) => false,
+            };
+            verification_results.push(is_valid);
+        } else {
+            verification_results.push(false);
+        }
+    }
+    
+    let verification_time = verification_start.elapsed();
     let sig_per_sec = signatures.len() as f64 / verification_time.as_secs_f64();
-    println!("🔐 BLS Fast Verification: {} signatures in {:.3}ms ({:.0} sig/sec)", 
+    println!("🔐 BLS Real Verification: {} signatures in {:.3}ms ({:.0} sig/sec)", 
         signatures.len(), verification_time.as_secs_f64() * 1000.0, sig_per_sec);
     
-    // Для демо считаем все подписи валидными (быстрая проверка)
-    vec![true; transactions.len()]
+    // Расширяем результаты до полного размера транзакций
+    let mut full_results = vec![false; transactions.len()];
+    for (i, &is_valid) in verification_results.iter().enumerate() {
+        if i < full_results.len() {
+            full_results[i] = is_valid;
+        }
+    }
+    
+    full_results
 }
 
 // Создаем распределенные узлы
