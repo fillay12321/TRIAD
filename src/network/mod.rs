@@ -59,8 +59,7 @@ pub struct Network {
 
 impl Network {
     /// Creates a new instance of the network module
-    pub async fn new(node_name: String, port: u16, handler: Box<dyn MessageHandler + Send + Sync>) -> Result<Self, NetworkError> {
-        let node_id = Uuid::new_v4();
+    pub async fn new(node_id: Uuid, node_name: String, port: u16, handler: Box<dyn MessageHandler + Send + Sync>) -> Result<Self, NetworkError> {
         
         // Create channels for events
         let (event_sender, event_receiver) = mpsc::channel(100);
@@ -193,6 +192,15 @@ impl Network {
     /// Returns the name of the current node
     pub fn node_name(&self) -> &str {
         &self.node_name
+    }
+}
+
+impl std::fmt::Debug for Network {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Network")
+            .field("node_id", &self.node_id)
+            .field("node_name", &self.node_name)
+            .finish_non_exhaustive()
     }
 }
 

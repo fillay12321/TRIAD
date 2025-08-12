@@ -19,10 +19,12 @@ pub struct TestnetNode {
 
 impl TestnetNode {
     pub async fn new(discovery_port: u16, tcp_port: u16) -> Result<Self, NetworkError> {
-        let node_name = format!("testnet-node-{}", Uuid::new_v4().to_string()[..8].to_string());
-        
-        // Создаем основную сеть с discovery и transport сервисами
-        let network = Network::new(node_name, tcp_port).await?;
+        let node_id = Uuid::new_v4();
+        let node_name = format!("testnet-node-{}", node_id.to_string()[..8].to_string());
+
+        // Создаем обработчик и сеть
+        let handler = Box::new(TestnetMessageHandler::new(node_id));
+        let network = Network::new(node_id, node_name, tcp_port, handler).await?;
         
         Ok(Self {
             network: Arc::new(network),
@@ -53,10 +55,8 @@ impl TestnetNode {
         // Запускаем event loop в отдельной задаче
         tokio::spawn(async move {
             let mut network_clone = network_clone;
-            let handler = TestnetMessageHandler::new(network_clone.node_id());
-            // Получаем mutable reference для event loop
             if let Some(network_mut) = Arc::get_mut(&mut network_clone) {
-                if let Err(e) = network_mut.run_event_loop(handler).await {
+                if let Err(e) = network_mut.run_event_loop().await {
                     error!("Event loop error: {}", e);
                 }
             }
