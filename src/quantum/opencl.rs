@@ -20,9 +20,9 @@ pub struct OpenClInterferenceEngine {
     vectorized_result_buffer: Buffer<f32>,
     constructive_buffer: Buffer<u32>,
     destructive_buffer: Buffer<u32>,
-    max_amp_buffer: Buffer<f64>,
-    min_amp_buffer: Buffer<f64>,
-    sum_amp_buffer: Buffer<f64>,
+    max_amp_buffer: Buffer<u32>,  // Изменено на u32 для атомарных операций
+    min_amp_buffer: Buffer<u32>,  // Изменено на u32 для атомарных операций
+    sum_amp_buffer: Buffer<u32>,  // Изменено на u32 для атомарных операций
     local_size: usize,
 }
 
@@ -80,9 +80,9 @@ impl OpenClInterferenceEngine {
             .arg(None::<&Buffer<f64>>) // amplitudes
             .arg(None::<&Buffer<u32>>) // constructive_count
             .arg(None::<&Buffer<u32>>) // destructive_count
-            .arg(None::<&Buffer<f64>>) // max_amplitude
-            .arg(None::<&Buffer<f64>>) // min_amplitude
-            .arg(None::<&Buffer<f64>>) // sum_amplitude
+            .arg(None::<&Buffer<u32>>) // max_amplitude (uint для атомарных операций)
+            .arg(None::<&Buffer<u32>>) // min_amplitude (uint для атомарных операций)
+            .arg(None::<&Buffer<u32>>) // sum_amplitude (uint для атомарных операций)
             .arg(0u32) // resolution
             .arg(0.0f64) // threshold
             .build()?;
@@ -107,15 +107,16 @@ impl OpenClInterferenceEngine {
             .arg(None::<&Buffer<f32>>) // amplitudes (float4)
             .arg(None::<&Buffer<u32>>) // constructive_count
             .arg(None::<&Buffer<u32>>) // destructive_count
-            .arg(None::<&Buffer<f32>>) // max_amplitude
-            .arg(None::<&Buffer<f32>>) // min_amplitude
-            .arg(None::<&Buffer<f32>>) // sum_amplitude
+            .arg(None::<&Buffer<u32>>) // max_amplitude (uint для атомарных операций)
+            .arg(None::<&Buffer<u32>>) // min_amplitude (uint для атомарных операций)
+            .arg(None::<&Buffer<u32>>) // sum_amplitude (uint для атомарных операций)
             .arg(0u32) // resolution
             .arg(0.0f32) // threshold
             .build()?;
         
         // Get optimal local work group size - адаптивный размер для разных GPU
-        let local_size = 64; // Оптимальный размер для NVIDIA T4, fallback на 1 для Intel
+        let device_max_wg_size = device.max_wg_size()?;
+        let local_size = 2; // Фиксированный размер 2 для совместимости
         
         // Create buffers with primitive types - ОПТИМИЗИРОВАННЫЕ размеры
         let amplitudes_buffer = Buffer::<f64>::builder()
@@ -167,19 +168,19 @@ impl OpenClInterferenceEngine {
             .len(1)
             .build()?;
         
-        let max_amp_buffer = Buffer::<f64>::builder()
+        let max_amp_buffer = Buffer::<u32>::builder()
             .queue(queue.clone())
             .flags(MemFlags::new().read_write())
             .len(1)
             .build()?;
         
-        let min_amp_buffer = Buffer::<f64>::builder()
+        let min_amp_buffer = Buffer::<u32>::builder()
             .queue(queue.clone())
             .flags(MemFlags::new().read_write())
             .len(1)
             .build()?;
         
-        let sum_amp_buffer = Buffer::<f64>::builder()
+        let sum_amp_buffer = Buffer::<u32>::builder()
             .queue(queue.clone())
             .flags(MemFlags::new().read_write())
             .len(1)
@@ -427,10 +428,9 @@ impl OpenClInterferenceEngine {
         let zero_u32 = vec![0u32; 1];
         self.constructive_buffer.write(&zero_u32).enq()?;
         self.destructive_buffer.write(&zero_u32).enq()?;
-        let zero_f64 = vec![0.0f64; 1];
-        self.max_amp_buffer.write(&zero_f64).enq()?;
-        self.min_amp_buffer.write(&zero_f64).enq()?;
-        self.sum_amp_buffer.write(&zero_f64).enq()?;
+        self.max_amp_buffer.write(&zero_u32).enq()?;
+        self.min_amp_buffer.write(&zero_u32).enq()?;
+        self.sum_amp_buffer.write(&zero_u32).enq()?;
         
         // Set kernel arguments
         self.analysis_kernel.set_arg(0, &pattern_buffer)?;
@@ -458,22 +458,28 @@ impl OpenClInterferenceEngine {
         // Read analysis results
         let mut constructive = vec![0u32; 1];
         let mut destructive = vec![0u32; 1];
-        let mut max_amp = vec![0.0f64; 1];
-        let mut min_amp = vec![0.0f64; 1];
-        let mut sum_amp = vec![0.0f64; 1];
+        let mut max_amp_bits = vec![0u32; 1];
+        let mut min_amp_bits = vec![0u32; 1];
+        let mut sum_amp_bits = vec![0u32; 1];
         self.constructive_buffer.read(&mut constructive).enq()?;
         self.destructive_buffer.read(&mut destructive).enq()?;
-        self.max_amp_buffer.read(&mut max_amp).enq()?;
-        self.min_amp_buffer.read(&mut min_amp).enq()?;
-        self.sum_amp_buffer.read(&mut sum_amp).enq()?;
+        self.max_amp_buffer.read(&mut max_amp_bits).enq()?;
+        self.min_amp_buffer.read(&mut min_amp_bits).enq()?;
+        self.sum_amp_buffer.read(&mut sum_amp_bits).enq()?;
         self.pro_que.queue().finish()?;
+        
+        // Конвертируем uint обратно в float
+        // Для простоты используем только high часть (32 бита)
+        let max_amp = f64::from_bits((max_amp_bits[0] as u64) << 32);
+        let min_amp = f64::from_bits((min_amp_bits[0] as u64) << 32);
+        let sum_amp = f64::from_bits((sum_amp_bits[0] as u64) << 32);
         
         Ok((
             constructive[0],
             destructive[0],
-            max_amp[0],
-            min_amp[0],
-            sum_amp[0],
+            max_amp,
+            min_amp,
+            sum_amp,
         ))
     }
     

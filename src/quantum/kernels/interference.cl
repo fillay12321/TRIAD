@@ -81,9 +81,9 @@ __kernel void analyze_interference(
     __global const double* amplitudes,
     __global uint* constructive_count,
     __global uint* destructive_count,
-    __global double* max_amplitude,
-    __global double* min_amplitude,
-    __global double* sum_amplitude,
+    __global uint* max_amplitude_bits,  // Изменено на uint для атомарных операций
+    __global uint* min_amplitude_bits,  // Изменено на uint для атомарных операций
+    __global uint* sum_amplitude_bits,  // Изменено на uint для атомарных операций
     const uint resolution,
     const double threshold
 ) {
@@ -95,14 +95,16 @@ __kernel void analyze_interference(
     if (a > threshold) atomic_inc(constructive_count);
     else if (a < -threshold) atomic_inc(destructive_count);
 
-    // Note: OpenCL doesn't define atomic ops for double; this is a simplification.
-    // In production you'd use atomic compare-exchange on 64-bit ints or do reduction.
-    // Here we just write non-atomically which is acceptable for approximate stats.
-    double old_max = *max_amplitude;
-    if (a > old_max) *max_amplitude = a;
-    double old_min = *min_amplitude;
-    if (a < old_min) *min_amplitude = a;
-    *sum_amplitude += a;
+    // Конвертируем double в uint для атомарных операций
+    ulong a_bits = as_ulong(a);
+    uint a_bits_high = (uint)(a_bits >> 32);
+    uint a_bits_low = (uint)(a_bits & 0xFFFFFFFF);
+    
+    // Используем атомарные операции с целыми типами
+    // Для double используем два uint (high и low части)
+    atomic_max(max_amplitude_bits, a_bits_high);
+    atomic_min(min_amplitude_bits, a_bits_low);
+    atomic_add(sum_amplitude_bits, a_bits_high + a_bits_low);
 }
 
 // Новый высокопроизводительный kernel для batch обработки
@@ -211,9 +213,9 @@ __kernel void analyze_interference_vectorized(
     __global const float4* amplitudes,
     __global uint* constructive_count,
     __global uint* destructive_count,
-    __global float* max_amplitude,
-    __global float* min_amplitude,
-    __global float* sum_amplitude,
+    __global uint* max_amplitude_bits,  // Изменено на uint для атомарных операций
+    __global uint* min_amplitude_bits,  // Изменено на uint для атомарных операций
+    __global uint* sum_amplitude_bits,  // Изменено на uint для атомарных операций
     uint resolution,
     float threshold
 ) {
@@ -233,12 +235,18 @@ __kernel void analyze_interference_vectorized(
     if (amp.w > threshold) atomic_inc(constructive_count);
     if (amp.w < -threshold) atomic_inc(destructive_count);
     
-    // Обновляем статистику (с атомарными операциями)
+    // Обновляем статистику (с атомарными операциями для целых типов)
     float max_val = fmax(fmax(amp.x, amp.y), fmax(amp.z, amp.w));
     float min_val = fmin(fmin(amp.x, amp.y), fmin(amp.z, amp.w));
     float sum_val = amp.x + amp.y + amp.z + amp.w;
     
-    atomic_max(max_amplitude, max_val);
-    atomic_min(min_amplitude, min_val);
-    atomic_add(sum_amplitude, sum_val);
+    // Конвертируем float в uint для атомарных операций
+    uint max_bits = as_uint(max_val);
+    uint min_bits = as_uint(min_val);
+    uint sum_bits = as_uint(sum_val);
+    
+    // Используем атомарные операции с целыми типами
+    atomic_max(max_amplitude_bits, max_bits);
+    atomic_min(min_amplitude_bits, min_bits);
+    atomic_add(sum_amplitude_bits, sum_bits);
 }

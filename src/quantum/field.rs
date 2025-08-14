@@ -15,6 +15,7 @@ pub struct QuantumWave {
     pub created_at: Instant,
     pub lifetime: Duration, // Время жизни волны
     pub superposition: Vec<StateVector>,
+    pub signature: Vec<u8>, // BLS подпись квантовой волны
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,8 +50,8 @@ impl QuantumField {
     }
 
     pub fn add_wave(&mut self, key: String, wave: QuantumWave) {
-        // Очищаем устаревшие волны перед добавлением новой
-        self.cleanup_expired_waves();
+        // НЕ очищаем устаревшие волны при каждом добавлении - это замедляет работу!
+        // self.cleanup_expired_waves(); // Убираем отсюда
         
         // Если достигли лимита, удаляем самую старую волну
         if self.active_waves.len() >= self.max_waves {
@@ -194,6 +195,7 @@ impl QuantumWave {
             created_at: Instant::now(),
             lifetime: Duration::from_millis(100), // 100ms время жизни волны
             superposition,
+            signature: vec![], // Инициализируем пустой подписью
         }
     }
 }
@@ -208,6 +210,7 @@ impl Default for QuantumWave {
             created_at: Instant::now(),
             lifetime: Duration::from_millis(100),
             superposition: vec![],
+            signature: vec![],
         }
     }
 }
@@ -283,6 +286,7 @@ impl From<QuantumState> for QuantumWave {
             created_at: Instant::now(),
             lifetime: Duration::from_secs(300), // 5 минут по умолчанию
             superposition: state.superposition,
+            signature: vec![], // Инициализируем пустой подписью
         }
     }
 }
