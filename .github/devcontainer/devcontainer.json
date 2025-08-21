@@ -1,0 +1,72 @@
+{
+    "name": "TRIAD Quantum Consensus Node",
+    "image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",
+    "features": {
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "18"
+        },
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/github-cli:1": {}
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "ms-vscode.vscode-json",
+                "ms-vscode.vscode-yaml",
+                "ms-vscode.vscode-toml"
+            ],
+            "settings": {
+                "rust-analyzer.checkOnSave.command": "clippy",
+                "rust-analyzer.cargo.buildScripts.enable": true
+            }
+        }
+    },
+    "forwardPorts": [8080, 8081, 8082, 8083, 8084, 8085, 8086, 8087, 8088, 8089],
+    "portsAttributes": {
+        "8080": {
+            "label": "TRIAD Node 0",
+            "onAutoForward": "notify"
+        },
+        "8081": {
+            "label": "TRIAD Node 1",
+            "onAutoForward": "notify"
+        },
+        "8082": {
+            "label": "TRIAD Node 2",
+            "onAutoForward": "notify"
+        },
+        "8083": {
+            "label": "TRIAD Node 3",
+            "onAutoForward": "notify"
+        },
+        "8084": {
+            "label": "TRIAD Node 4",
+            "onAutoForward": "notify"
+        },
+        "8085": {
+            "label": "TRIAD Node 5",
+            "onAutoForward": "notify"
+        },
+        "8086": {
+            "label": "TRIAD Node 6",
+            "onAutoForward": "notify"
+        },
+        "8087": {
+            "label": "TRIAD Node 7",
+            "onAutoForward": "notify"
+        },
+        "8088": {
+            "label": "TRIAD Node 8",
+            "onAutoForward": "notify"
+        },
+        "8089": {
+            "label": "TRIAD Node 9",
+            "onAutoForward": "notify"
+        }
+    },
+    "postCreateCommand": "cargo build",
+    "remoteUser": "vscode",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+    "workspaceFolder": "/workspace"
+}

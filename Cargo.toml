@@ -1,0 +1,174 @@
+[package]
+name = "triad"
+version = "1.1.0"
+edition = "2021"
+authors = ["Михаил"]
+description = "TRIAD - Квантово-вдохновленная распределенная сеть следующего поколения"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+# Математические библиотеки
+num-complex = { version = "0.4", features = ["serde"] }  # Для работы с комплексными числами (квантовые амплитуды)
+nalgebra = "0.32.3"    # Для матричных операций
+rand = "0.8.5"
+rand_core = "0.6"
+ed25519-dalek = "2"
+ed25519-zebra = { version = "2", optional = true }
+rand_core_05 = { package = "rand_core", version = "0.5" }
+rand07 = { package = "rand", version = "0.7" }
+
+# Сериализация/десериализация
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Сетевые библиотеки
+tokio = { version = "1.28", features = ["full"] }
+libp2p = { version = "0.51.0", features = ["tcp", "dns", "quic", "noise", "yamux", "ping", "identify", "kad", "gossipsub", "autonat", "relay", "dcutr", "macros", "request-response"] }
+libp2p-tcp = { version = "0.39.0", features = ["tokio"] }
+
+# Optional WebRTC fallback (only compiled when feature `webrtc` is enabled)
+libp2p-webrtc = { version = "0.9.0-alpha.1", optional = true }
+
+# Утилиты
+log = "0.4"
+env_logger = "0.10"
+thiserror = "1.0"
+
+# Дополнительные зависимости
+clap = { version = "4.4.10", features = ["derive"] }
+plotters = "0.3.5"
+rayon = "1.7"  # Для параллельной обработки
+num_cpus = "1.16"
+
+# Async traits
+async-trait = "0.1"
+futures = "0.3"
+dirs = "5"
+
+# HTTP server dependencies
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+
+# Дополнительные зависимости для сетевого взаимодействия
+bincode = "1.3"
+uuid = { version = "1.4.1", features = ["v4", "serde"] }
+local-ip-address = "0.5"
+
+# Добавляем новые зависимости
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+lazy_static = "1.4"
+
+# Добавляем новые зависимости
+sha2 = "0.10"
+
+# Token and ledger enhancements
+rocksdb = "0.21"
+
+# High-throughput enhancements
+blsful = "3.0.0-pre8"  # For aggregated signatures
+quinn = "0.10"  # For fast network transport (QUIC) - compatible with rustls 0.20
+rustls = "0.21"  # For QUIC TLS compatibility with quinn 0.10
+rcgen = "0.11"  # For certificate generation compatibility
+
+# Compression libraries
+zstd = "0.12"  # For Zstandard compression
+lz4_flex = "0.9"  # For LZ4 compression
+brotli = "3.3"  # For Brotli compression
+
+# Innovation enhancements
+tensorflow = "0.21.0"  # For ML in semantic/error
+bellman = "0.13"  # For ZK-SNARKs
+schnorrkel = "0.10"  # For advanced Schnorr signatures
+
+# Advanced features
+cust = { version = "0.3.2", optional = true }  # CUDA
+ocl = { version = "0.19", optional = true }  # OpenCL
+smartcore = { version = "0.3.2", features = ["serde"] }  # ML для динамического шардинга
+
+# WebSocket support
+tokio-tungstenite = "0.20"
+
+[features]
+default = ["zebra_batch"]
+cuda = ["cust"]
+opencl = ["ocl"]
+webrtc = ["libp2p-webrtc"]
+consensus = []
+processor = []
+zebra_batch = ["ed25519-zebra"]
+
+[dev-dependencies]
+criterion = "0.5.1"    # Для бенчмарков
+tokio-test = "0.4"
+
+[lib]
+name = "triad"
+path = "src/lib.rs"
+
+[[bin]]
+name = "triad"
+path = "src/main.rs"
+
+[[example]]
+name = "basic_consensus"
+path = "examples/basic_consensus.rs"
+
+[[example]]
+name = "scalability_test"
+path = "examples/scalability_test.rs"
+
+[[example]]
+name = "energy_comparison"
+path = "examples/energy_comparison.rs"
+
+[[example]]
+name = "quantum_metrics"
+path = "examples/quantum_metrics.rs"
+
+[[example]]
+name = "consensus_analysis"
+path = "examples/consensus_analysis.rs"
+
+[[example]]
+name = "energy_metrics"
+path = "examples/energy_metrics.rs"
+
+[[example]]
+name = "comprehensive_demo"
+path = "examples/comprehensive_demo.rs"
+
+[[example]]
+name = "network_node"
+path = "examples/network_node.rs"
+
+[[example]]
+name = "error_analysis_demo"
+path = "examples/error_analysis_demo.rs"
+
+[[example]]
+name = "semantic_analysis_demo"
+path = "examples/semantic_analysis_demo.rs"
+
+[[example]]
+name = "quantum_consensus_demo"
+path = "examples/quantum_consensus_demo.rs"
+
+[[example]]
+name = "chat"
+path = "examples/chat.rs"
+
+[profile.release]
+opt-level = 3
+lto = true 
+
+[profile.dev]
+opt-level = 3
+codegen-units = 1
+debug = false
+incremental = false
+lto = "thin"
+
+[profile.dev.package."*"]
+opt-level = 3
