@@ -7,8 +7,7 @@ use tokio::sync::{mpsc, RwLock};
 use env_logger::Env;
 use log::{error, info};
 
-use triad::network::discovery::LibP2PDiscoveryService;
-use triad::network::peer::PeerManager;
+use triad::network::{LibP2PDiscoveryService, PeerManager};
 use triad::network::types::NetworkEvent;
 
 #[tokio::main]

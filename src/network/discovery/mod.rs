@@ -428,10 +428,6 @@ impl LibP2PDiscoveryService {
                         }
                     }
                 }
-                _ = &mut shutdown_rx => {
-                    info!("🔽 Received shutdown signal.");
-                    break;
-                }
             }
         }
         Ok(())
