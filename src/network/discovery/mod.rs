@@ -312,7 +312,7 @@ impl LibP2PDiscoveryService {
             SwarmBuilder::with_executor(transport, behaviour, self.local_peer_id, TokioExecutor).build()
         };
 
-        // Listen on TCP and QUIC
+        // Listen on TCP and optionally QUIC
         swarm
             .listen_on(
                 Multiaddr::empty()
@@ -320,14 +320,22 @@ impl LibP2PDiscoveryService {
                     .with(Protocol::Tcp(self.tcp_port)),
             )
             .expect("listen tcp");
-        swarm
-            .listen_on(
+        let enable_quic = env::var("TRIAD_ENABLE_QUIC").ok().as_deref() == Some("1");
+        if enable_quic {
+            match swarm.listen_on(
                 Multiaddr::empty()
                     .with(Protocol::Ip4(Ipv4Addr::UNSPECIFIED))
                     .with(Protocol::Udp(self.quic_port))
                     .with(Protocol::QuicV1),
-            )
-            .map_err(|e| NetworkError::ConnectionFailed(format!("listen QUIC failed: {}", e)))?;
+            ) {
+                Ok(_) => info!("QUIC listening enabled on udp:{} (set by TRIAD_ENABLE_QUIC=1)", self.quic_port),
+                Err(e) => {
+                    warn!("listen QUIC failed: {} — continuing without QUIC", e);
+                }
+            }
+        } else {
+            info!("QUIC disabled. Set TRIAD_ENABLE_QUIC=1 to enable listening on udp:{}", self.quic_port);
+        }
 
         // Bootstrap: if addr configured, dial it (needed to reach relay server and reserve)
         if let (false, Some(addr)) = (self.is_bootstrap, self.bootstrap_addr.clone()) {

@@ -78,7 +78,7 @@ lz4_flex = "0.9"  # For LZ4 compression
 brotli = "3.3"  # For Brotli compression
 
 # Innovation enhancements
-tensorflow = "0.21.0"  # For ML in semantic/error
+tensorflow = { version = "0.21.0", optional = true }  # For ML in semantic/error; optional to avoid runtime dylib when not used
 bellman = "0.13"  # For ZK-SNARKs
 schnorrkel = "0.10"  # For advanced Schnorr signatures
 

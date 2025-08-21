@@ -454,21 +454,30 @@ impl SemanticEngine {
         stats
     }
 
+    // ML prediction entrypoint with feature gating
+    #[cfg(feature = "tensorflow")]
     fn predict_with_ml(&self, data: &[f32]) -> Result<Vec<f32>, String> {
         self.predict_with_tensorflow(data)
     }
 
+    #[cfg(not(feature = "tensorflow"))]
+    fn predict_with_ml(&self, _data: &[f32]) -> Result<Vec<f32>, String> {
+        // TensorFlow отключен: возвращаем пустой результат или заглушку
+        Ok(vec![])
+    }
+
+    // TensorFlow-backed implementation compiled only when the feature is enabled
+    #[cfg(feature = "tensorflow")]
     fn predict_with_tensorflow(&self, data: &[f32]) -> Result<Vec<f32>, String> {
         let model = tensorflow::Graph::new();
         let options = tensorflow::SessionOptions::new();
-        let session = tensorflow::Session::new(&options, &model).map_err(|e| e.to_string())?;
+        let _session = tensorflow::Session::new(&options, &model).map_err(|e| e.to_string())?;
         
-        let input = tensorflow::Tensor::new(&[1, data.len() as u64])
+        let _input = tensorflow::Tensor::new(&[1, data.len() as u64])
             .with_values(data)
             .map_err(|e| e.to_string())?;
             
         // Здесь должна быть реальная логика предсказания
-        
         Ok(vec![])  // Заглушка
     }
 } 
