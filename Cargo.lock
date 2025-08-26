@@ -3174,6 +3174,7 @@ dependencies = [
  "rand 0.8.5",
  "rustls 0.20.9",
  "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -6036,6 +6037,7 @@ dependencies = [
  "futures 0.3.31",
  "lazy_static",
  "libp2p",
+ "libp2p-quic",
  "libp2p-tcp",
  "libp2p-webrtc",
  "local-ip-address",

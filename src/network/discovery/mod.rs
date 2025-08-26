@@ -9,7 +9,7 @@ pub mod compression;
 pub mod state_sync;
 pub mod sharding;
 
-use std::{env, net::Ipv4Addr, str::FromStr, sync::Arc};
+use std::{env, net::Ipv4Addr, str::FromStr, sync::Arc, io};
 use std::fs;
 use std::path::PathBuf;
 use std::future::Future;
@@ -36,6 +36,8 @@ use libp2p::{
     yamux,
     Multiaddr, PeerId, Transport,
 };
+use libp2p_quic as quic;
+use futures::future::Either;
 
 #[cfg(feature = "webrtc")]
 use libp2p_webrtc as webrtc;
@@ -235,13 +237,37 @@ impl LibP2PDiscoveryService {
         kp
     }
 
-    /// Build transport: Relay client transport OR TCP, then Noise+Yamux
+    /// Build transport stack for WAN: QUIC OR (Relay OR TCP) with Noise+Yamux
     fn build_transport(&self, relay_transport: relay::client::Transport) -> Result<libp2p::core::transport::Boxed<(PeerId, libp2p::core::muxing::StreamMuxerBox)>, NetworkError> {
-        let tcp_transport = tcp::tokio::Transport::new(tcp::Config::default().nodelay(true));
-        let transport = OrTransport::new(relay_transport, tcp_transport)
+        // TCP with Noise + Yamux
+        let tcp_base = tcp::tokio::Transport::new(tcp::Config::default().nodelay(true));
+        let tcp_upgraded = OrTransport::new(relay_transport, tcp_base)
             .upgrade(upgrade::Version::V1Lazy)
             .authenticate(noise::Config::new(&self.local_key).map_err(|e| NetworkError::Internal(e.to_string()))?)
             .multiplex(yamux::Config::default())
+            .map(|out, _| {
+                let (peer, muxer) = out;
+                (peer, libp2p::core::muxing::StreamMuxerBox::new(muxer))
+            })
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .boxed();
+
+        // QUIC transport (security + muxing are built-in)
+        let quic_transport = quic::GenTransport::<quic::tokio::Provider>::new(quic::Config::new(&self.local_key))
+            .map(|out, _| {
+                let (peer, muxer) = out;
+                (peer, libp2p::core::muxing::StreamMuxerBox::new(muxer))
+            })
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .boxed();
+
+        // Final combined transport: QUIC OR (Relay|TCP+Noise+Yamux)
+        let transport = OrTransport::new(quic_transport, tcp_upgraded)
+            .map(|out, _| match out {
+                Either::Left(v) => v,
+                Either::Right(v) => v,
+            })
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             .boxed();
         Ok(transport)
     }
@@ -335,6 +361,19 @@ impl LibP2PDiscoveryService {
             }
         } else {
             info!("QUIC disabled. Set TRIAD_ENABLE_QUIC=1 to enable listening on udp:{}", self.quic_port);
+        }
+
+        // Announce external addresses explicitly if provided (for WAN reachability)
+        if let Ok(addrs) = env::var("TRIAD_ANNOUNCE_ADDRS") {
+            for s in addrs.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                match Multiaddr::from_str(s) {
+                    Ok(ma) => {
+                        info!("📣 Announcing external address from env: {}", ma);
+                        let _ = swarm.add_external_address(ma, libp2p::swarm::AddressScore::Infinite);
+                    }
+                    Err(e) => warn!("Invalid TRIAD_ANNOUNCE_ADDRS entry '{}': {}", s, e),
+                }
+            }
         }
 
         // Bootstrap: if addr configured, dial it (needed to reach relay server and reserve)
