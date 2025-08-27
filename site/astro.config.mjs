@@ -6,7 +6,9 @@ import react from '@astrojs/react';
 // раскомментируйте base: '/TRIAD'
 export default defineConfig({
   integrations: [tailwind({ applyBaseStyles: false }), react()],
-  site: 'https://fillay12321.github.io',
-  base: '/triad-site',
+  // Full production URL of the site
+  site: 'https://fillay12321.github.io/TRIAD',
+  // Base path equals the repository name for GitHub Pages project sites
+  base: '/TRIAD',
   scopedStyleStrategy: 'where',
 });
