@@ -1,0 +1,132 @@
+---
+import BaseLayout from '@layouts/BaseLayout.astro';
+---
+<BaseLayout title="Контакты — TRIAD">
+  <section class="relative">
+    <!-- Soft gradient backdrop -->
+    <div class="pointer-events-none absolute inset-0 opacity-30 [mask-image:radial-gradient(70%_60%_at_50%_30%,black,transparent)]">
+      <div class="absolute -inset-24 bg-[radial-gradient(circle_at_top_right,rgba(124,156,255,0.25),transparent_60%)]"></div>
+      <div class="absolute -inset-24 bg-[radial-gradient(circle_at_bottom_left,rgba(0,255,200,0.15),transparent_60%)]"></div>
+    </div>
+
+    <div class="relative mx-auto max-w-6xl px-4 py-12">
+      <header class="mb-8">
+        <h1 class="text-3xl md:text-4xl font-bold tracking-tight">Контакты</h1>
+        <p class="mt-3 text-mist max-w-3xl">Свяжитесь с нами по вопросам сотрудничества, обратной связи и участия в разработке TRIAD. Мы открыты к диалогу — напишите письмо или создайте issue на GitHub.</p>
+      </header>
+
+      <div class="grid gap-6 md:grid-cols-3">
+        <!-- Email card -->
+        <article class="contact-card group rounded-xl border border-white/10 bg-white/5/40 backdrop-blur p-5 transition-all duration-300 will-change-transform opacity-0 translate-y-4 hover:-translate-y-1 hover:border-white/30 hover:shadow-[0_10px_40px_-10px_rgba(124,156,255,0.45)]">
+          <div class="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/20 text-white/90">✉️</div>
+          <h2 class="text-lg font-semibold text-white">Email</h2>
+          <p class="mt-2 text-mist">Для быстрых вопросов и предложений. Постараемся ответить в кратчайшие сроки.</p>
+          <div class="mt-3 flex items-center gap-3">
+            <a class="inline-flex items-center rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15" href="mailto:keshashel@gmail.com">Написать</a>
+            <button class="copy-btn inline-flex items-center rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10" data-copy="keshashel@gmail.com">Скопировать</button>
+          </div>
+          <p class="mt-2 text-xs text-white/60 select-all">keshashel@gmail.com</p>
+        </article>
+
+        <!-- GitHub card -->
+        <article class="contact-card group rounded-xl border border-white/10 bg-white/5/40 backdrop-blur p-5 transition-all duration-300 will-change-transform opacity-0 translate-y-4 hover:-translate-y-1 hover:border-white/30 hover:shadow-[0_10px_40px_-10px_rgba(124,156,255,0.45)]">
+          <div class="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/20 text-white/90">🐙</div>
+          <h2 class="text-lg font-semibold text-white">GitHub</h2>
+          <p class="mt-2 text-mist">Отслеживайте развитие проекта, создавайте issue, предлагайте улучшения через PR.</p>
+          <div class="mt-3 flex items-center gap-3">
+            <a class="inline-flex items-center rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15" href="https://github.com/fillay12321" target="_blank" rel="noopener">Открыть</a>
+            <button class="copy-btn inline-flex items-center rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10" data-copy="https://github.com/fillay12321">Скопировать</button>
+          </div>
+          <p class="mt-2 text-xs text-white/60 select-all">github.com/fillay12321</p>
+        </article>
+
+        <!-- Partnerships card -->
+        <article class="contact-card group rounded-xl border border-white/10 bg-white/5/40 backdrop-blur p-5 transition-all duration-300 will-change-transform opacity-0 translate-y-4 hover:-translate-y-1 hover:border-white/30 hover:shadow-[0_10px_40px_-10px_rgba(124,156,255,0.45)]">
+          <div class="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/20 text-white/90">🤝</div>
+          <h2 class="text-lg font-semibold text-white">Партнёрства</h2>
+          <p class="mt-2 text-mist">Если вы хотите интегрироваться с TRIAD или провести совместное исследование — напишите кратко о вашей идее и целях.</p>
+          <div class="mt-3 flex items-center gap-3">
+            <a class="inline-flex items-center rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15" href="mailto:keshashel@gmail.com?subject=TRIAD%20Partnership">Связаться</a>
+          </div>
+        </article>
+      </div>
+
+      <!-- Contact form (mailto) -->
+      <div class="mt-12 rounded-2xl border border-white/10 bg-white/5/40 backdrop-blur p-6">
+        <h2 class="text-xl font-semibold text-white">Написать сообщение</h2>
+        <p class="mt-2 text-mist">Форма не отправляет данные на сервер — при отправке откроется ваше почтовое приложение с подготовленным письмом.</p>
+        <form id="contact-form" class="mt-6 grid gap-4 md:grid-cols-2" autocomplete="on">
+          <div class="flex flex-col gap-1 md:col-span-1">
+            <label for="name" class="text-sm text-white/80">Имя</label>
+            <input id="name" name="name" type="text" class="rounded-lg border border-white/10 bg-black/30 px-3 py-2 outline-none focus:border-white/30" placeholder="Иван" />
+          </div>
+          <div class="flex flex-col gap-1 md:col-span-1">
+            <label for="email" class="text-sm text-white/80">Email</label>
+            <input id="email" name="email" type="email" class="rounded-lg border border-white/10 bg-black/30 px-3 py-2 outline-none focus:border-white/30" placeholder="you@example.com" />
+          </div>
+          <div class="flex flex-col gap-1 md:col-span-2">
+            <label for="message" class="text-sm text-white/80">Сообщение</label>
+            <textarea id="message" name="message" rows="5" class="rounded-lg border border-white/10 bg-black/30 px-3 py-2 outline-none focus:border-white/30" placeholder="Коротко о запросе..."></textarea>
+          </div>
+          <div class="md:col-span-2 flex items-center gap-3">
+            <button type="submit" class="inline-flex items-center rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm hover:bg-white/15">Сформировать письмо</button>
+            <a href="mailto:keshashel@gmail.com" class="text-sm underline opacity-80 hover:opacity-100">Или напишите напрямую</a>
+          </div>
+        </form>
+      </div>
+
+      <script is:inline>
+        // Reveal animation
+        const cards = Array.from(document.querySelectorAll('.contact-card'));
+        if (cards.length) {
+          const io = new IntersectionObserver((entries) => {
+            entries.forEach((e) => {
+              if (e.isIntersecting) {
+                e.target.classList.remove('opacity-0','translate-y-4');
+                e.target.classList.add('opacity-100','translate-y-0');
+                io.unobserve(e.target);
+              }
+            });
+          }, { threshold: 0.15, rootMargin: '0px 0px -10% 0px' });
+          cards.forEach((c, i) => {
+            c.style.transitionDelay = `${Math.min(i*60, 240)}ms`;
+            io.observe(c);
+          });
+        }
+
+        // Copy buttons
+        document.querySelectorAll('.copy-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const val = btn.getAttribute('data-copy') || '';
+            try {
+              await navigator.clipboard.writeText(val);
+              btn.textContent = 'Скопировано';
+              setTimeout(() => btn.textContent = 'Скопировать', 1400);
+            } catch (_) {
+              // Fallback: select text by showing alert
+              alert('Скопируйте вручную: ' + val);
+            }
+          });
+        });
+
+        // Mailto form
+        const form = document.getElementById('contact-form');
+        form?.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const name = (document.getElementById('name') as HTMLInputElement)?.value?.trim() || '';
+          const email = (document.getElementById('email') as HTMLInputElement)?.value?.trim() || '';
+          const message = (document.getElementById('message') as HTMLTextAreaElement)?.value?.trim() || '';
+          const subject = encodeURIComponent(`TRIAD: сообщение от ${name || 'гостя'}`);
+          const bodyLines = [
+            name ? `Имя: ${name}` : '',
+            email ? `Email: ${email}` : '',
+            message ? `\n${message}` : ''
+          ].filter(Boolean);
+          const body = encodeURIComponent(bodyLines.join('\n'));
+          const mailto = `mailto:keshashel@gmail.com?subject=${subject}&body=${body}`;
+          window.location.href = mailto;
+        });
+      </script>
+    </div>
+  </section>
+</BaseLayout>

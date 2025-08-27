@@ -1,0 +1,75 @@
+---
+import BaseLayout from '@layouts/BaseLayout.astro';
+import Hero from '../components/Hero.astro';
+---
+<BaseLayout>
+  <Hero />
+  <section id="about" class="mx-auto max-w-6xl px-4 py-12">
+    <h2 class="text-2xl font-semibold">О проекте</h2>
+    <p class="mt-3 text-mist">TRIAD — проект по созданию высокопроизводительной, энергоэффективной распределённой сети. Ключевая идея — рассматривать принятие решений как максимум интерференции “волн” транзакций в поле графа (DAG).</p>
+  </section>
+
+  <section id="features" class="mx-auto max-w-6xl px-4 py-12 grid md:grid-cols-3 gap-6">
+    <div class="rounded-lg border border-white/10 p-5">
+      <h3 class="font-semibold">Интерференция вместо протокола</h3>
+      <p class="mt-2 text-mist">Решение — максимум интерференции “волн” транзакций в поле графа.</p>
+    </div>
+    <div class="rounded-lg border border-white/10 p-5">
+      <h3 class="font-semibold">Параллелизм по умолчанию</h3>
+      <p class="mt-2 text-mist">DAG + пакетные проверки подписей, векторизация, параллельные этапы.</p>
+    </div>
+    <div class="rounded-lg border border-white/10 p-5">
+      <h3 class="font-semibold">Минимум сетевых раундов</h3>
+      <p class="mt-2 text-mist">Компактные сообщения и агрегаты вместо тяжёлого голосования.</p>
+    </div>
+  </section>
+
+  <section id="quickstart" class="mx-auto max-w-6xl px-4 py-12">
+    <h2 class="text-2xl font-semibold">Быстрый старт</h2>
+    <pre class="mt-3 rounded-lg border border-white/10 p-4 text-sm overflow-auto"><code>cargo build --release
+RAYON_NUM_THREADS=4 TRIAD_WAVE_SIG_BATCH=500 \
+  cargo run --release --example quantum_consensus_demo</code></pre>
+    <p class="mt-2 text-mist">Логи смотреть в <code>examples/quantum_consensus_demo.rs</code>.</p>
+  </section>
+
+  <section id="structure" class="mx-auto max-w-6xl px-4 py-12">
+    <h2 class="text-2xl font-semibold">Структура репозитория</h2>
+    <pre class="mt-3 rounded-lg border border-white/10 p-4 text-sm overflow-auto"><code>TRIAD/
+├── Cargo.toml
+├── src/
+│   ├── dag/
+│   ├── error_analysis/
+│   ├── github/
+│   ├── network/
+│   └── ...
+├── examples/
+│   └── quantum_consensus_demo.rs
+└── README.md</code></pre>
+  </section>
+
+  <section id="roadmap" class="mx-auto max-w-6xl px-4 py-12 grid md:grid-cols-2 gap-6">
+    <div class="rounded-lg border border-white/10 p-5">
+      <h3 class="font-semibold">Производительность</h3>
+      <ul class="list-disc pl-5 mt-2 text-mist">
+        <li>SIMD/AVX оптимизации ядра интерференции</li>
+        <li>Исследование GPU‑бэкенда</li>
+      </ul>
+    </div>
+    <div class="rounded-lg border border-white/10 p-5">
+      <h3 class="font-semibold">Сеть и устойчивость</h3>
+      <ul class="list-disc pl-5 mt-2 text-mist">
+        <li>Эвристики распространения волн и агрегирования</li>
+        <li>Лучшие диагностики и стабильность</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="contacts" class="mx-auto max-w-6xl px-4 py-12">
+    <h2 class="text-2xl font-semibold">Контакты</h2>
+    <ul class="mt-3 text-mist">
+      <li>Автор: fillay</li>
+      <li>Email: <a class="underline" href="mailto:keshashel@gmail.com">keshashel@gmail.com</a></li>
+      <li>GitHub: <a class="underline" href="https://github.com/fillay12321" target="_blank">@fillay12321</a></li>
+    </ul>
+  </section>
+</BaseLayout>

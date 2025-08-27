@@ -1,0 +1,12 @@
+---
+import BaseLayout from '@layouts/BaseLayout.astro';
+---
+<BaseLayout title="Быстрый старт — TRIAD">
+  <section class="mx-auto max-w-6xl px-4 py-12">
+    <h1 class="text-3xl font-bold">Быстрый старт</h1>
+    <pre class="mt-4 rounded-lg border border-white/10 p-4 text-sm overflow-auto"><code>cargo build --release
+RAYON_NUM_THREADS=4 TRIAD_WAVE_SIG_BATCH=500 \
+  cargo run --release --example quantum_consensus_demo</code></pre>
+    <p class="mt-3 text-mist">Логи: <code>examples/quantum_consensus_demo.rs</code>.</p>
+  </section>
+</BaseLayout>

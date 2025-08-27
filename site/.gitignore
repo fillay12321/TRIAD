@@ -1,0 +1,4 @@
+
+# Ignore build and deps
+node_modules/
+dist/

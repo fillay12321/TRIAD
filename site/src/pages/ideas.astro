@@ -1,0 +1,62 @@
+---
+import BaseLayout from '@layouts/BaseLayout.astro';
+---
+<BaseLayout title="Идеи — TRIAD">
+  <section class="relative">
+    <div class="pointer-events-none absolute inset-0 opacity-30 [mask-image:radial-gradient(70%_60%_at_50%_30%,black,transparent)]">
+      <div class="absolute -inset-24 bg-[radial-gradient(circle_at_top_right,rgba(124,156,255,0.25),transparent_60%)]"></div>
+      <div class="absolute -inset-24 bg-[radial-gradient(circle_at_bottom_left,rgba(0,255,200,0.15),transparent_60%)]"></div>
+    </div>
+    <div class="relative mx-auto max-w-6xl px-4 py-12">
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight">Идеи</h1>
+
+      <div class="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <article class="idea-card group rounded-xl border border-white/10 bg-white/5/40 backdrop-blur p-5 transition-all duration-300 will-change-transform opacity-0 translate-y-4 hover:-translate-y-1 hover:border-white/30 hover:shadow-[0_10px_40px_-10px_rgba(124,156,255,0.45)]">
+          <div class="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/20 text-white/90">🌊</div>
+          <h2 class="text-lg font-semibold text-white">Интерференция вместо протокола</h2>
+          <p class="mt-2 text-mist">
+            Мы моделируем каждую транзакцию как волну (амплитуда, фаза, TTL). Консенсус достигается в точках конструктивной
+            интерференции на множестве параллельных шардов — вместо тяжёлых голосований и глобального упорядочивания.
+          </p>
+        </article>
+
+        <article class="idea-card group rounded-xl border border-white/10 bg-white/5/40 backdrop-blur p-5 transition-all duration-300 will-change-transform opacity-0 translate-y-4 hover:-translate-y-1 hover:border-white/30 hover:shadow-[0_10px_40px_-10px_rgba(124,156,255,0.45)]">
+          <div class="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/20 text-white/90">⚡</div>
+          <h2 class="text-lg font-semibold text-white">Параллелизм по умолчанию</h2>
+          <p class="mt-2 text-mist">
+            Архитектура <b>DAG</b>, батч‑верификация (Ed25519), <b>SIMD</b> и многопоточность (Rayon) раскрывают все ядра CPU.
+            Система проектируется так, чтобы параллельность не была опцией — она базовая характеристика исполнения.
+          </p>
+        </article>
+
+        <article class="idea-card group rounded-xl border border-white/10 bg-white/5/40 backdrop-blur p-5 transition-all duration-300 will-change-transform opacity-0 translate-y-4 hover:-translate-y-1 hover:border-white/30 hover:shadow-[0_10px_40px_-10px_rgba(124,156,255,0.45)]">
+          <div class="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/20 text-white/90">🪄</div>
+          <h2 class="text-lg font-semibold text-white">Интероперабельный адаптер в суперпозиции</h2>
+          <p class="mt-2 text-mist">
+            Адаптер существует в суперпозиции всех форматов блокчейнов. Пока пользователь не запрашивает конкретный формат,
+            он не «коллапсирует». При запросе материализуется ровно в нужный вид (EVM, SVM, UTXO и т.д.) под контекст клиента.
+          </p>
+        </article>
+      </div>
+
+      <script is:inline>
+        const cards = Array.from(document.querySelectorAll('.idea-card'));
+        if (cards.length) {
+          const io = new IntersectionObserver((entries) => {
+            entries.forEach((e) => {
+              if (e.isIntersecting) {
+                e.target.classList.remove('opacity-0','translate-y-4');
+                e.target.classList.add('opacity-100','translate-y-0');
+                io.unobserve(e.target);
+              }
+            });
+          }, { threshold: 0.15, rootMargin: '0px 0px -10% 0px' });
+          cards.forEach((c, i) => {
+            c.style.transitionDelay = `${Math.min(i*60, 240)}ms`;
+            io.observe(c);
+          });
+        }
+      </script>
+    </div>
+  </section>
+</BaseLayout>

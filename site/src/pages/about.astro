@@ -1,0 +1,53 @@
+---
+import BaseLayout from '@layouts/BaseLayout.astro';
+const baseRaw = import.meta.env.BASE_URL || '/';
+const base = baseRaw.endsWith('/') ? baseRaw : baseRaw + '/';
+const withBase = (path: string) => base + path.replace(/^\/+/, '');
+---
+<BaseLayout title="О проекте — TRIAD">
+  <section class="mx-auto max-w-6xl px-4 py-12">
+    <h1 class="text-3xl md:text-4xl font-bold tracking-tight">О проекте</h1>
+
+    <div class="mt-6 grid md:grid-cols-12 gap-8">
+      <div class="md:col-span-7 space-y-5 text-mist leading-relaxed">
+        <p id="legacy-blockchains" class="text-base md:text-lg text-white/90">
+          Traditional blockchains face fundamental bottlenecks. Global transaction ordering, slow cryptographic verification, and inefficient use of computational resources (CPU/GPU) create congestion, limiting the scalability and performance of even the most advanced L1s.
+        </p>
+
+        <p>
+          TRIAD offers a radical new approach. We move beyond the bureaucracy of voting and centralized queues. Instead, we draw inspiration from the principles of quantum physics to propose a new paradigm: consensus as a physical phenomenon—wave interference.
+        </p>
+
+        <p>
+          In TRIAD, each transaction becomes a "wave" (with amplitude, phase, and TTL). Instead of slow, sequential ordering, we analyze the interference pattern of these waves across parallel shards. Consensus is reached where constructive interference occurs.
+        </p>
+
+        <div class="rounded-lg border border-white/10 bg-white/5 p-4">
+          <h2 class="font-semibold text-white">We are betting on</h2>
+          <ul class="mt-2 list-disc pl-5 space-y-1">
+            <li>True batch verification of Ed25519 signatures (using ed25519-zebra)—the core driver of speed.</li>
+            <li>Maximum parallelism (in Rust, using Rayon)—to fully utilize all CPU cores.</li>
+            <li>A lightweight, batch-friendly consensus—based on physics, not complex protocols.</li>
+          </ul>
+        </div>
+
+        <blockquote class="border-l-2 border-white/20 pl-4 italic text-white/80">
+          Our goal is to build the foundation for the L1 of the future. Where performance is determined not by the number of votes, but by the efficiency of computation and the fundamental laws of nature. TRIAD is not just an attempt to be faster. It's an attempt to rethink consensus from the ground up.
+        </blockquote>
+      </div>
+
+      <aside class="md:col-span-5">
+        <figure class="group relative overflow-hidden rounded-xl border border-white/10 bg-black/40">
+          <div class="w-full h-64 grid place-items-center text-white/70 text-sm">
+            Видео удалено
+          </div>
+          <figcaption class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3 text-xs text-white/80">
+            Classic blockchains — global ordering and heavy cryptography become bottlenecks
+          </figcaption>
+        </figure>
+      </aside>
+    </div>
+
+    <!-- Видео удалено -->
+  </section>
+</BaseLayout>
